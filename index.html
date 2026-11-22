@@ -473,10 +473,17 @@ const ACHS=[
 ];
 const CHAT=['[SQUAD] Up to 5 players can join your Home Lobby! Teammates tap READY so Leader can tap START!','[VOICE] Use the Top-Left Mic (🎤) & Speaker (🔊) buttons in Home & 3D World!','[TIP] Right-click in 3D Battle Arena (or tap 🎯) to Scope / ADS in!','[HUD] Move & resize Fire, Scope, Jump, Gun Switch & Joystick in Settings → Custom HUD'];
 
-const KEY='levelupLife.v1';let OFF=0;try{OFF=+localStorage.getItem('lul.off')||0}catch(e){}
+/* ===== PER-ACCOUNT STORAGE KEYS (PREVENTS MIXING DIFFERENT GMAIL ACCOUNTS) ===== */
+const KEY_BASE='levelupLife.v1';
+const KEY_ACTIVE='levelupLife.activeUid';
+let OFF=0;try{OFF=+localStorage.getItem('lul.off')||0}catch(e){}
 const now=()=>new Date(Date.now()+OFF),today=()=>now().toLocaleDateString('en-CA'),yest=()=>{const d=now();d.setDate(d.getDate()-1);return d.toLocaleDateString('en-CA')};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S,pg='',tb='',ci=0,shRar='ALL',focusState=null,focusInt=null,wakeLock=null;const ui=document.getElementById('ui');
+
+function storageKeyFor(uid){return uid?KEY_BASE+'.uid.'+uid:KEY_BASE+'.guest'}
+function getSavedUid(){try{return localStorage.getItem(KEY_ACTIVE)||''}catch(e){return''}}
+function setSavedUid(uid){try{if(uid)localStorage.setItem(KEY_ACTIVE,uid);else localStorage.removeItem(KEY_ACTIVE)}catch(e){}}
 
 function defHud(){
   return{
@@ -492,26 +499,47 @@ function defHud(){
   };
 }
 function defCfg(){return{sfx:1,vol:85,bgm:0,vib:1,gfx:'High',fps:60,showFps:0,sens:100,gyro:1,rot:1,tod:'auto',hud:defHud()}}
-function fresh(){return{name:'Player',id:'ID'+Math.floor(1e7+Math.random()*9e7),createdAt:Date.now(),lvl:1,xp:0,coins:100,cp:150,keys:3,tokens:0,streak:0,last:'',pity:0,opens:0,owned:{0:1,3:1},friends:[],tcount:{d:'',n:0},eq:{gun:3,skin:-1,char:-1},ms:{d:'',c:[]},lr:[],reg:0,googleLinked:0,total:0,wins:0,rev:0,wp:'default',
+function fresh(customName='Player'){return{name:customName,id:'ID'+Math.floor(1e7+Math.random()*9e7),createdAt:Date.now(),lvl:1,xp:0,coins:100,cp:150,keys:3,tokens:0,streak:0,last:'',pity:0,opens:0,owned:{0:1,3:1},friends:[],tcount:{d:'',n:0},eq:{gun:3,skin:-1,char:-1},ms:{d:'',c:[]},lr:[],reg:0,googleLinked:0,total:0,wins:0,rev:0,wp:'default',
   map:'firing_range',mode:'5-Player Squad Royale',umaps:{firing_range:1},login:{d:'',day:0},ach:[],focusMins:0,cfg:defCfg(),
   quests:[{id:1,n:'Wash clothes',d:'Easy',mins:15,done:''},{id:2,n:'Study 1 focused hour',d:'Medium',mins:60,done:''},{id:3,n:'Prepare notes',d:'Medium',mins:25,done:''},{id:4,n:'Work on my website 1 hour',d:'Hard',mins:60,done:''},{id:5,n:'Finish website v1 and deploy',d:'Boss',mins:90,done:''}]}}
-function load(){
-  try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-  const wasMissingCreated=!S||!S.createdAt;
-  S=Object.assign(fresh(),S||{});
-  if(wasMissingCreated){S.createdAt=Date.now();lsave()}
-  if(typeof S.cp!=='number')S.cp=150;
-  if(typeof S.wins!=='number')S.wins=0;
-  S.cfg=Object.assign(defCfg(),S.cfg||{});
-  S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});
-  S.umaps=Object.assign({firing_range:1},S.umaps||{});
-  S.login=Object.assign({d:'',day:0},S.login||{});
-  if(!Array.isArray(S.ach))S.ach=[];
+
+function normalizeState(raw,customName='Player'){
+  const base=fresh(customName);
+  const st=Object.assign(base,raw||{});
+  if(!st.createdAt)st.createdAt=Date.now();
+  if(typeof st.cp!=='number')st.cp=150;
+  if(typeof st.wins!=='number')st.wins=0;
+  st.cfg=Object.assign(defCfg(),st.cfg||{});
+  st.cfg.hud=Object.assign(defHud(),st.cfg.hud||{});
+  st.umaps=Object.assign({firing_range:1},st.umaps||{});
+  st.login=Object.assign({d:'',day:0},st.login||{});
+  if(!Array.isArray(st.ach))st.ach=[];
+  if(!Array.isArray(st.friends))st.friends=[];
+  return st;
 }
-function lsave(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+
+function load(uid=null){
+  const targetUid=uid!==null?uid:getSavedUid();
+  let raw=null;
+  try{
+    raw=JSON.parse(localStorage.getItem(storageKeyFor(targetUid)));
+    /* Migrate legacy single-key guest save only if guest slot is empty */
+    if(!raw&&!targetUid){
+      const legacy=JSON.parse(localStorage.getItem(KEY_BASE));
+      if(legacy&&!legacy.googleLinked)raw=legacy;
+    }
+  }catch(e){}
+  S=normalizeState(raw);
+}
+function lsave(){
+  try{
+    const uid=USER?USER.uid:getSavedUid();
+    localStorage.setItem(storageKeyFor(uid),JSON.stringify(S));
+  }catch(e){}
+}
 function save(){S.rev=(S.rev||0)+1;lsave();cloudSoon()}
 const need=l=>100+(l-1)*50,pick=a=>a[Math.floor(Math.random()*a.length)];
-function toast(m){const t=document.createElement('div');t.className='toast';t.innerHTML=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2900)}
+function toast(m){const t=document.createElement('div');t.className='toast';t.innerHTML=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3200)}
 function addXP(n){S.xp+=n;let up=0;while(S.xp>=need(S.lvl)){S.xp-=need(S.lvl);S.lvl++;S.keys+=2;S.coins+=50;S.cp+=15;up++}if(up){SFX.lvlup();toast('LEVEL UP! Level '+S.lvl+' · +2 🗝️ +50 🪙 +15 💎 CP')}}
 function nToday(){return S.tcount.d===today()?S.tcount.n:0}
 function ms(){if(S.ms.d!==today())S.ms={d:today(),c:[]};return S.ms}
@@ -1098,7 +1126,6 @@ function startMatch(squadId=null){
       let changed=false;
       Object.keys(mateAvs).forEach(pid=>{
         const doc=activeDocs[pid];
-        /* Remove teammate from 3D world immediately if they left the squad OR exited back to lobby */
         if(!doc||doc.squadStatus!=='started'){
           sc.remove(mateAvs[pid].grp);
           delete mateAvs[pid];
@@ -1225,7 +1252,6 @@ function startMatch(squadId=null){
       cam.lookAt(player.position.x+shoulderX,player.position.y+1.45,player.position.z+shoulderZ);
     }
 
-    /* Sync Co-Op Squad Position via own players/{uid} document */
     if(squadId&&DB&&USER&&t-lastSync>.3){
       lastSync=t;
       pushMyPlayerDoc({squadStatus:'started',pos:{x:+player.position.x.toFixed(2),z:+player.position.z.toFixed(2),yaw:+player.rotation.y.toFixed(2),kills:st.kills}});
@@ -1357,7 +1383,6 @@ function listenSquad(){
       if(AR&&x.pid!==S.id&&x.pos&&x.squadStatus==='started')AR.setMatePos(x.pid,x.pos);
     });
     SQUAD_DOCS=next;
-    /* Check if Leader changed map or launched the 3D Battle Arena */
     const leaderDoc=next[SQUAD.leaderPid];
     if(leaderDoc&&SQUAD.leaderPid!==S.id){
       if(leaderDoc.map&&leaderDoc.map!==S.map){S.map=leaderDoc.map}
@@ -1554,8 +1579,8 @@ function showMatchInviteModal(inv){
 
 function copy(t){try{navigator.clipboard.writeText(t);toast('Copied!')}catch(e){toast('Copy failed')}}
 function setName(){const v=document.getElementById('pn').value.trim();if(v){S.name=v.slice(0,16);save();render()}}
-function importData(){try{const o=JSON.parse(document.getElementById('bk').value);if(!o.quests)throw 0;S=Object.assign(fresh(),o);S.cfg=Object.assign(defCfg(),S.cfg||{});S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});save();look();render();toast('Backup loaded')}catch(e){toast('Invalid backup')}}
-function resetAll(){if(confirm('Erase ALL local progress?')){S=fresh();save();look();go('')}}
+function importData(){try{const o=JSON.parse(document.getElementById('bk').value);if(!o.quests)throw 0;S=normalizeState(o);save();look();render();toast('Backup loaded')}catch(e){toast('Invalid backup')}}
+function resetAll(){if(confirm('Erase ALL local progress for this account?')){S=fresh(S.name);S.reg=1;save();look();go('')}}
 function setCfg(k,v){S.cfg[k]=v;if(k==='bgm')SFX.setAmb(!!v);if(k==='sfx'&&v)SFX.quest();if(k==='vib'&&v)SFX.vib(40);if(k==='gfx'||k==='tod'){applyGfx();tod()}save();render()}
 function go(p,t){pg=p;tb=t||{missions:'Daily Missions',store:'Featured',loadout:'Gun',clan:'Friends',profile:'Overview',maps:'Select Map'}[p]||'';render();if(typeof tx!=='undefined')tx=p==='loadout'?-1.5:0;if(p==='maps')setTimeout(drawMapRadar,30)}
 
@@ -1585,7 +1610,6 @@ function squadMembers(onlyInMatch=false){
       });
     });
   }
-  /* Always put Squad Leader first in slot 0 */
   list.sort((a,b)=>(b.isLeader?1:0)-(a.isLeader?1:0));
   return list.slice(0,5);
 }
@@ -1599,10 +1623,8 @@ function home(){
   const readyCount=teammates.filter(x=>x.ready).length;
   const allTeammatesReady=teammates.length===0||teammates.every(x=>x.ready);
 
-  /* Floating CODM-style Character Nameplates under the 3D Soldiers */
   const lobTags='<div class="lob-tags">'+sq.map(p=>'<div class="ltag"><div class="rk-b">'+(p.isLeader?'👑 LEADER · ':'MEMBER · ')+'LV.'+p.lvl+'</div><b>'+esc(p.name)+'</b><small style="color:'+(p.ready||p.isLeader?'#5be58a':'#fbbf24')+'">'+(p.isLeader?'👑 HOST':p.ready?'✔ READY':'⏳ NOT READY')+'</small></div>').join('')+'</div>';
 
-  /* Bottom-Right Big Action Button: Leader gets START (enabled only when all teammates READY); Teammates get READY toggle */
   let mainBtn='';
   if(!isLeader){
     mainBtn='<button class="nb big '+(MY_READY?'ready-on':'')+'" onclick="toggleReady()">'+(MY_READY?'✔ READY!':'✔ READY')+'<br><small>'+(MY_READY?'Waiting for Leader':'Tap when ready')+'</small></button>';
@@ -1770,7 +1792,7 @@ function pProfile(){
     tog('bgm','Tactical Lobby Ambience','Low-frequency command hum')+
     tog('vib','Phone Vibration / Haptics','Tactile feedback on taps, gunfire and crate openings')+
     '<h2 style="margin-top:10px">4. User Account & Cloud</h2>'+
-    '<div class="fr"><div style="flex:1"><b>Account Status</b><div class="s" style="text-transform:none">'+(USER?'Signed in with Google: '+esc(USER.email||USER.displayName):'Guest Account (Local Device)')+' · '+cst+'</div></div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm danger" onclick="logoutAccount()">🚪 LOGOUT</button>':'<button class="sm" onclick="gLogin()">GOOGLE LOGIN</button><button class="sm danger" onclick="logoutAccount()">🚪 LOGOUT</button>')+'</div>'+
+    '<div class="fr"><div style="flex:1"><b>Account Status</b><div class="s" style="text-transform:none">'+(USER?'Google Account: '+esc(USER.email||USER.displayName):'Guest Account (Local Device)')+' · '+cst+'</div></div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm danger" onclick="logoutAccount()">🚪 LOGOUT</button>':'<button class="sm" onclick="gLogin()">GOOGLE LOGIN</button><button class="sm danger" onclick="logoutAccount()">🚪 LOGOUT</button>')+'</div>'+
     '<div class="row"><input id="pn2" value="'+esc(S.name)+'" maxlength="16"><button class="sm" onclick="const v=document.getElementById(\'pn2\').value.trim();if(v){S.name=v.slice(0,16);save();render();toast(\'Callsign updated\')}">UPDATE CALLSIGN</button></div>';
   }else{
     const r=rk(S.lvl),nx=RANKS[r+1],lv=[];for(let n=2;n<=Math.max(12,S.lvl+5);n++){const[cc,k,cp]=lrew(n),got=S.lr.includes(n),can=S.lvl>=n;lv.push('<div class="lv'+(can?' ok':'')+'"><b>LV '+n+'</b><div>'+cc+' 🪙 · '+k+' 🗝️<br>+'+cp+' 💎 CP</div>'+(got?'<div class="s">CLAIMED</div>':can?'<button class="sm" onclick="claimLvl('+n+')">CLAIM</button>':'<div class="s">LOCKED</div>')+'</div>')}
@@ -1782,18 +1804,31 @@ function pProfile(){
   return page('Profile',tabsH(['Overview','Safe House','Achievements','Settings'])+'<div class="ct">'+c+'</div>');
 }
 
-/* ---------- CLOUD (Firebase Auth + Permanent One-Time Login + Mobile Redirect Fallback) ---------- */
-let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogin=0,lastDay='',gSigningIn=false;
+/* ---------- CLOUD (Firebase Auth + Per-Gmail Isolation + Mobile & Desktop Popup/Redirect) ---------- */
+let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogin=0,lastDay='',gSigningIn=false,activeAuthUid='',typedLoginName='';
 const TO=()=>({signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
-const isMobileDevice=()=>/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||isStandalone();
 
 async function handleSignedInUser(u){
+  if(!u||activeAuthUid===u.uid)return;
+  activeAuthUid=u.uid;
+  gSigningIn=false;
   USER=u;
+  setSavedUid(u.uid);
+
+  /* Load ONLY this specific Gmail UID's local save (or start fresh for a new Gmail account!) */
+  const defaultCallsign=(typedLoginName||(u.displayName?u.displayName.split(' ')[0]:'Player')).slice(0,16)||'Player';
+  let uidRaw=null;
+  try{uidRaw=JSON.parse(localStorage.getItem(storageKeyFor(u.uid)))}catch(e){}
+  S=normalizeState(uidRaw,defaultCallsign);
+  if(typedLoginName)S.name=typedLoginName.slice(0,16);
   S.reg=1;S.googleLinked=1;
-  if((!S.name||S.name==='Player')&&u.displayName)S.name=u.displayName.split(' ')[0].slice(0,16);
   lsave();
-  cst='Signing in...';
-  if(inLogin){inLogin=0;loading()}
+
+  cst='Loading account...';
+  if(inLogin||(!busy&&pg==='')){
+    inLogin=0;
+    loading();
+  }
   await cloudLoad();
   listenMultiplayer();
   upd();
@@ -1812,13 +1847,13 @@ function cloudInit(){
       if(res&&res.user)handleSignedInUser(res.user);
     }).catch(e=>{
       gSigningIn=false;
-      if(e&&e.code&&e.code!=='auth/no-auth-event')toast('Login failed: '+esc(e.code));
+      if(e&&e.code&&e.code!=='auth/no-auth-event')toast('Google Sign-In: '+esc(e.code));
     });
     AU.onAuthStateChanged(async u=>{
-      gSigningIn=false;
       if(u){
         await handleSignedInUser(u);
       }else{
+        activeAuthUid='';
         USER=null;
         cst='Local only';
         if(unsub)unsub();
@@ -1830,55 +1865,88 @@ function cloudInit(){
   }catch(e){cst='Cloud error';console.warn(e)}
 }
 
-async function gLogin(){
+function gLogin(){
   if(!AU)return toast('Cloud is not set up yet.');
   if(gSigningIn)return;
   gSigningIn=true;
   const lnEl=document.getElementById('ln');
-  if(lnEl&&lnEl.value.trim()){S.name=lnEl.value.trim().slice(0,16);lsave()}
+  typedLoginName=lnEl&&lnEl.value.trim()?lnEl.value.trim().slice(0,16):'';
   const p=new firebase.auth.GoogleAuthProvider();
   p.setCustomParameters({prompt:'select_account'});
-  try{
-    await AU.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-    if(isMobileDevice()){
-      toast('Redirecting to Google Sign-In...');
-      await AU.signInWithRedirect(p);
-      return;
-    }
-    const res=await AU.signInWithPopup(p);
+
+  /* Call signInWithPopup SYNCHRONOUSLY inside tap handler so mobile & desktop browsers allow it */
+  AU.signInWithPopup(p).then(res=>{
     gSigningIn=false;
-    if(res&&res.user)await handleSignedInUser(res.user);
-  }catch(e){
+    if(res&&res.user)handleSignedInUser(res.user);
+  }).catch(e=>{
     gSigningIn=false;
     const code=e&&e.code||'';
     if(code==='auth/popup-blocked'||code==='auth/cancelled-popup-request'||code==='auth/operation-not-supported-in-this-environment'){
-      toast('Opening Google Sign-In redirect...');
+      toast('Opening Google Sign-In page...');
       AU.signInWithRedirect(p).catch(err=>toast('Login failed: '+esc(err.code||err.message)));
     }else if(code!=='auth/popup-closed-by-user'){
       toast('Login failed: '+esc(code||e.message));
     }
-  }
+  });
 }
 
 async function logoutAccount(){
   gSigningIn=false;
+  activeAuthUid='';
+  typedLoginName='';
   if(SQUAD)await leaveSquad();
-  S.reg=0;S.googleLinked=0;lsave();
-  if(unsub)unsub();
-  if(unsubOutbox)unsubOutbox();
+  if(unsub){unsub();unsub=null}
+  if(unsubOutbox){unsubOutbox();unsubOutbox=null}
+
+  /* Clear active session pointer & reset in-memory state so next login starts clean */
+  if(!USER){
+    S.reg=0;lsave();
+  }
+  setSavedUid('');
   if(AU&&USER){
     try{await AU.signOut()}catch(e){}
   }
-  USER=null;busy=0;pg='';
+  USER=null;
+  S=fresh();
+  busy=0;pg='';
   loginScr();
-  toast('Logged out! Returned to login screen.');
+  toast('Logged out! Select Google Login or Guest.');
 }
-async function cloudLoad(){try{await syncClock();const d=await DB.collection('saves').doc(USER.uid).get();
-if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){const keptName=S.name&&S.name!=='Player'?S.name:c.name;S=Object.assign(fresh(),c,{reg:1,googleLinked:1});if(keptName)S.name=keptName;if(!S.createdAt)S.createdAt=Date.now();if(typeof S.cp!=='number')S.cp=150;if(typeof S.wins!=='number')S.wins=0;S.cfg=Object.assign(defCfg(),S.cfg||{});S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});lsave();look();toast('Cloud progress loaded ☁️')}else{S.reg=1;S.googleLinked=1;lsave();await cloudPush()}}
-else{S.reg=1;S.googleLinked=1;if((!S.name||S.name==='Player')&&USER.displayName)S.name=USER.displayName.split(' ')[0].slice(0,16);lsave();await cloudPush()}
-cst='Synced ✓';listenFriends();if(inLogin&&S.reg){inLogin=0;loading()}}catch(e){cst='Sync failed';console.warn(e)}}
+
+async function cloudLoad(){
+  if(!DB||!USER)return;
+  try{
+    await syncClock();
+    const d=await DB.collection('saves').doc(USER.uid).get();
+    if(d.exists){
+      const c=JSON.parse(d.data().data);
+      /* Always trust the cloud save for this specific Gmail UID when switching accounts */
+      if((c.rev||0)>=(S.rev||0)){
+        const fallbackName=(typedLoginName||(USER.displayName?USER.displayName.split(' ')[0]:'Player')).slice(0,16)||'Player';
+        S=normalizeState(c,fallbackName);
+        if(typedLoginName)S.name=typedLoginName.slice(0,16);
+        S.reg=1;S.googleLinked=1;
+        lsave();look();
+        toast('Loaded '+esc(S.name)+' ('+S.id+') ☁️');
+      }else{
+        S.reg=1;S.googleLinked=1;lsave();await cloudPush();
+      }
+    }else{
+      /* Brand new Gmail account: save its own fresh profile to Firestore */
+      S.reg=1;S.googleLinked=1;
+      if((!S.name||S.name==='Player')&&USER.displayName)S.name=USER.displayName.split(' ')[0].slice(0,16);
+      lsave();await cloudPush();
+      toast('Created new account for '+esc(S.name)+' ('+S.id+')!');
+    }
+    typedLoginName='';
+    cst='Synced ✓';
+    listenFriends();
+    if(inLogin&&S.reg){inLogin=0;loading()}
+  }catch(e){cst='Sync failed';console.warn(e)}
+}
+
 async function cloudPush(){if(!DB||!USER)return;try{cst='Saving...';upd();const b=DB.batch(),T=firebase.firestore.FieldValue.serverTimestamp();
-b.set(DB.collection('saves').doc(USER.uid),{data:JSON.stringify(S),rev:S.rev||0,dev:navigator.userAgent.slice(0,90),t:T});
+b.set(DB.collection('saves').doc(USER.uid),{data:JSON.stringify(S),rev:S.rev||0,email:USER.email||'',dev:navigator.userAgent.slice(0,90),t:T});
 b.set(DB.collection('players').doc(USER.uid),{pid:S.id,n:S.name,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖',eq:S.eq,map:S.map,squadId:SQUAD?SQUAD.id:'',squadLeaderPid:SQUAD?SQUAD.leaderPid:'',squadStatus:SQUAD?SQUAD.status:'',squadMatchId:SQUAD?SQUAD.matchId||'':'',squadReady:SQUAD?(SQUAD.leaderPid===S.id?true:!!MY_READY):false,micOn:!!MIC_ON,spkOn:!!SPK_ON,outbox:OUTBOX.slice(-24),outboxTargets:[...new Set(OUTBOX.map(o=>o.toPid))],t:T},{merge:true});
 await b.commit();cst='Synced ✓'}catch(e){cst='Sync failed';console.warn(e)}upd()}
 function cloudSoon(){if(!USER)return;clearTimeout(tmr);cst='Saving...';tmr=setTimeout(cloudPush,2500)}
@@ -1910,7 +1978,7 @@ return '<div class="fr"><div style="flex:1"><b>Cloud Save</b><div class="s" id="
 '<div class="fr"><div style="flex:1"><b>Daily Wallpaper</b><div class="s">New background every day</div></div><select onchange="S.wp=this.value;save();toast(\'Applying...\');setTimeout(()=>location.reload(),700)" style="width:auto">'+o('default','Classic photo')+o('nasa','NASA space photo')+o('wiki','Wikipedia photo of the day')+'</select></div>'}
 
 /* ---------- 3D LOBBY ENGINE (UP TO 5-PLAYER CODM SQUAD FORMATION) ---------- */
-let R,SC,CAM,SOL,SOL_AVS=[],PR,RG,BGM,PS,tx=0,drag=0,gx=0,gy=0,rocks=[],M={},liveFps=60,fCnt=0,fT=0;
+let R,SC,CAM,SOL,SOL_AVS=[],PR,RG,BGM,PS,tx=0,drag=0,gx=0,gy=0,rocks=[],M={},liveFps=60,fCnt=0,fT=0,glStarted=0;
 const GLTF_CACHE={soldier:null};
 function mat(c){return new THREE.MeshStandardMaterial({color:c,roughness:.75,metalness:.2,flatShading:true})}
 function applyGfx(){if(!R)return;const q=S.cfg.gfx||'High';const pr=q==='Low'?.75:q==='Medium'?1:q==='Ultra'?Math.min(devicePixelRatio,2.5):Math.min(devicePixelRatio,1.75);R.setPixelRatio(pr);if(PS)PS.visible=q!=='Low';if(SC&&SC.fog)SC.fog.far=q==='Low'?14:22}
@@ -1918,7 +1986,6 @@ function applyGfx(){if(!R)return;const q=S.cfg.gfx||'High';const pr=q==='Low'?.7
 function updateLobbySquad(){
   if(!R||!SOL||!SOL_AVS.length)return;
   const sq=squadMembers(false);
-  /* 5-Player CODM V-Formation on the Lobby Platform */
   const slots=sq.length===1
     ?[[0,0,0,0]]
     :[[0,0,.35,0],[-.92,0,-.1,.12],[.92,0,-.1,-.12],[-1.72,0,-.55,.22],[1.72,0,-.55,-.22]];
@@ -1944,7 +2011,11 @@ function look(){
   updateLobbySquad();
 }
 
-function initGL(bgU,solU){if(typeof THREE==='undefined')return;try{
+function initGL(bgU,solU){
+  if(typeof THREE==='undefined')return;
+  if(glStarted){look();return}
+  glStarted=1;
+  try{
 R=new THREE.WebGLRenderer({canvas:document.getElementById('gl'),alpha:true,antialias:S.cfg.gfx!=='Low'});applyGfx();
 SC=new THREE.Scene();SC.fog=new THREE.Fog(0x141c38,7,20);if(bgU)new THREE.TextureLoader().load(bgU,t=>{const g=new THREE.SphereGeometry(40,48,32);g.scale(-1,1,1);BGM=new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:t,fog:false,color:0x7f8fc0}));SC.add(BGM)});CAM=new THREE.PerspectiveCamera(35,1,.1,50);CAM.position.set(0,1.65,8.9);CAM.lookAt(0,1.3,0);
 SC.add(new THREE.HemisphereLight(0x9bb0ff,0x251038,1.15));const d=new THREE.DirectionalLight(0xffffff,1.15);d.position.set(3,4,5);SC.add(d);const r=new THREE.DirectionalLight(0xa050ff,1.3);r.position.set(-4,2,-3);SC.add(r);
@@ -1999,9 +2070,16 @@ const BGS=['assets/bg.jpg','https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/exa
 const SOLS=['assets/soldier.glb','https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb'];
 const TIPS=['Up to 5 players can join your Home Lobby! Teammates tap READY so Leader can tap START!','Use the Top-Left Mic (🎤) & Speaker (🔊) buttons in Home & 3D World!','Right-click in 3D Battle Arena (or tap 🎯) to Scope / ADS in!','Equip Sniper, AR, SMG, or Launcher in Loadout to hold distinct 3D weapons'],wait=ms=>new Promise(r=>setTimeout(r,ms));
 async function grab(urls){for(const u of urls){try{let r=window.caches?await caches.match(u):null;if(!r){r=await fetch(u);if(!r.ok)continue;if(window.caches)try{(await caches.open('lul1')).put(u,r.clone())}catch(e){}}const b=await r.blob();return{u:URL.createObjectURL(b),mb:b.size/1048576}}catch(e){}}return null}
-function loginScr(){inLogin=1;ui.innerHTML='<div class="scr"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="s" style="margin:.3rem 0 1.1rem">One-Time Sign In · Enter your callsign & link Google once to play</div><div style="width:min(320px,72vw)"><input id="ln" maxlength="16" placeholder="Enter your callsign" value="'+(S.name!=='Player'?esc(S.name):'')+'"><button class="sm" style="width:100%;margin-top:8px;padding:.7rem" onclick="gLogin()">SIGN IN WITH GOOGLE (ONE-TIME LOGIN)</button><button class="sm alt" style="width:100%;margin-top:6px;padding:.6rem" onclick="doLogin()">PLAY AS GUEST (LOCAL DEVICE)</button><button class="sm alt" style="width:100%;margin-top:6px" onclick="impLogin()">LOAD BACKUP</button></div><div class="s" style="position:absolute;bottom:.6rem">Your login is remembered automatically across sessions</div></div>'}
-function doLogin(){const v=document.getElementById('ln').value.trim();if(!v)return toast('Enter a callsign');S.name=v.slice(0,16);S.reg=1;save();loading()}
-function impLogin(){const t=prompt('Paste your backup text');if(!t)return;try{const o=JSON.parse(t);if(!o.quests)throw 0;S=Object.assign(fresh(),o,{reg:1});if(!S.createdAt)S.createdAt=Date.now();S.cfg=Object.assign(defCfg(),S.cfg||{});S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});save();loading()}catch(e){toast('Invalid backup')}}
+function loginScr(){inLogin=1;busy=0;ui.innerHTML='<div class="scr"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="s" style="margin:.3rem 0 1.1rem">One-Time Sign In · Each Gmail account saves its own profile</div><div style="width:min(320px,72vw)"><input id="ln" maxlength="16" placeholder="Enter your callsign (optional for Google)" value="'+(S.name!=='Player'?esc(S.name):'')+'"><button class="sm" style="width:100%;margin-top:8px;padding:.7rem" onclick="gLogin()">SIGN IN WITH GOOGLE (ONE-TIME LOGIN)</button><button class="sm alt" style="width:100%;margin-top:6px;padding:.6rem" onclick="doLogin()">PLAY AS GUEST (LOCAL DEVICE)</button><button class="sm alt" style="width:100%;margin-top:6px" onclick="impLogin()">LOAD BACKUP</button></div><div class="s" style="position:absolute;bottom:.6rem">Your login is remembered automatically across sessions</div></div>'}
+function doLogin(){
+  const v=document.getElementById('ln').value.trim();
+  if(!v)return toast('Enter a callsign');
+  setSavedUid('');
+  load('');
+  S.name=v.slice(0,16);S.reg=1;S.googleLinked=0;
+  save();loading();
+}
+function impLogin(){const t=prompt('Paste your backup text');if(!t)return;try{const o=JSON.parse(t);if(!o.quests)throw 0;S=normalizeState(o);S.reg=1;save();loading()}catch(e){toast('Invalid backup')}}
 async function loading(){if(busy)return;busy=1;inLogin=0;SFX.preload();ui.innerHTML='<div class="scr" id="sc"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="lbar"><div class="s" id="lt"></div><div class="bar" style="width:100%;height:.6rem"><i id="lb" style="width:0"></i></div><div class="s" id="tp" style="margin-top:6px"></div></div></div>';
 const sc=document.getElementById('sc'),lb=document.getElementById('lb'),lt=document.getElementById('lt');document.getElementById('tp').textContent='TIP: '+pick(TIPS);
 const tot=ITEMS.length+4;let n=0,mb=0;const st=t=>{n++;lb.style.width=Math.round(n/tot*100)+'%';lt.textContent=t+' · '+mb.toFixed(1)+' MB downloaded'};
