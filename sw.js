@@ -1,5 +1,5 @@
 /* Level Up Life Ops - Offline Service Worker */
-const CACHE = 'lul-pwa-v1';
+const CACHE = 'lul-pwa-v2';
 const CORE = [
   './',
   './index.html',
