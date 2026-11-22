@@ -1,7 +1,12 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0a0e1f"><title>Level Up Life: Mission Hub</title>
+<meta name="theme-color" content="#0a0e1f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon-192.svg">
+<title>Level Up Life: Mission Hub</title>
 <style>
 :root{--y:#f5d300;--bg:#0a0e1f;--pn:#141c38;--pn2:#1f2a52;--tx:#eef2ff;--mu:#8e9ac4;--C:#9aa0b5;--R:#4aa8ff;--E:#b45cff;--L:#ffb020;--cut:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
 *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent;user-select:none}
@@ -87,6 +92,30 @@ const FB_CONFIG={
   projectId:"level-up-life-ops",
   appId:"1:252491857005:web:547c174f5810fc148a1364"
 };
+
+/* ===== PWA SERVICE WORKER & INSTALL PROMPT ===== */
+let PWA_PROMPT=null;
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('SW failed',e));
+}
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();
+  PWA_PROMPT=e;
+  if(typeof render==='function')render();
+});
+window.addEventListener('appinstalled',()=>{
+  PWA_PROMPT=null;
+  if(typeof toast==='function')toast('Installed! Launch Life Ops from your home screen.');
+  if(typeof render==='function')render();
+});
+async function installApp(){
+  if(!PWA_PROMPT)return toast('In Chrome menu (⋮), tap "Add to Home screen" or "Install app".');
+  PWA_PROMPT.prompt();
+  const res=await PWA_PROMPT.userChoice;
+  if(res.outcome==='accepted')PWA_PROMPT=null;
+  render();
+}
+const isStandalone=()=>window.matchMedia('(display-mode: fullscreen)').matches||window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
 
 const RAR={C:{n:'Common',w:60,dupe:5,price:40,c:0x9aa0b5},R:{n:'Rare',w:27,dupe:15,price:120,c:0x4aa8ff},E:{n:'Epic',w:10,dupe:40,price:300,c:0xb45cff},L:{n:'Legendary',w:3,dupe:120,price:800,c:0xffb020}};
 const ITEMS=[['Gun','🔫','Rusty Pistol','C'],['Gun','🔫','Street SMG','C'],['Gun','🔫','Pump Shotgun','C'],['Gun','🔫','Recruit Rifle','C'],['Gun','🏹','Hunter Bow','R'],['Gun','🔫','Neon M4','R'],['Gun','🔫','Frost Kilo','R'],['Gun','🔫','Inferno AK','E'],['Gun','🔫','Thunder Shotgun','E'],['Gun','🔫','Gold Dragon DL','L'],['Gun','🚀','Galaxy Launcher','L'],
@@ -208,7 +237,8 @@ try{if(S.wp==='nasa'){const j=await(await fetch('https://api.nasa.gov/planetary/
 else{const d=now(),j=await(await fetch('https://en.wikipedia.org/api/rest_v1/feed/featured/'+d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0'),TO())).json();u=j.image&&j.image.thumbnail?j.image.thumbnail.source.replace(/\/\d+px-/,'/1280px-'):null}}catch(e){}
 if(u)try{localStorage.setItem(k,u)}catch(e){}return u}
 function cloudTab(){const ok=!!FB_CONFIG.apiKey,o=(v,t)=>'<option value="'+v+'"'+(S.wp===v?' selected':'')+'>'+t+'</option>';
-return '<div class="fr"><div style="flex:1"><b>Cloud save</b><div class="s" id="cs">'+(ok?cst:'Not set up yet')+'</div>'+(USER?'<div class="s" style="text-transform:none">'+esc(USER.email||'')+'</div>':'')+'</div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm alt" onclick="AU.signOut()">SIGN OUT</button>':'<button class="sm" onclick="gLogin()">SIGN IN WITH GOOGLE</button>')+'</div>'+(ok?'':'<p class="s">Paste your Firebase config at the top of the script to turn on cloud save and friends by ID.</p>')+
+const pwaRow=isStandalone()?'<div class="fr"><div style="flex:1"><b>Android App Mode</b><div class="s">Installed & offline-ready ✓</div></div></div>':'<div class="fr"><div style="flex:1"><b>Install App on Phone</b><div class="s">Full-screen landscape + offline play ($0)</div></div><button class="sm" onclick="installApp()">'+(PWA_PROMPT?'INSTALL NOW':'HOW TO INSTALL')+'</button></div>';
+return '<div class="fr"><div style="flex:1"><b>Cloud save</b><div class="s" id="cs">'+(ok?cst:'Not set up yet')+'</div>'+(USER?'<div class="s" style="text-transform:none">'+esc(USER.email||'')+'</div>':'')+'</div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm alt" onclick="AU.signOut()">SIGN OUT</button>':'<button class="sm" onclick="gLogin()">SIGN IN WITH GOOGLE</button>')+'</div>'+(ok?'':'<p class="s">Paste your Firebase config at the top of the script to turn on cloud save and friends by ID.</p>')+pwaRow+
 '<div class="fr"><div style="flex:1"><b>Daily wallpaper</b><div class="s">New image every day. Free, no key.</div></div><select onchange="S.wp=this.value;save();toast(\'Applying...\');setTimeout(()=>location.reload(),700)" style="font:inherit;background:#1f2a52;color:#fff;padding:.5rem">'+o('default','Classic photo')+o('nasa','NASA space photo')+o('wiki','Wikipedia photo of the day')+'</select></div><p class="s">Server clock offset: '+Math.round(OFF/1000)+' s (daily reset uses real time, not your phone clock)</p>'}
 /* ---------- 3D ---------- */
 let R,SC,CAM,SOL,GUN,PR,RG,SOLM,MIX,BGM,GL3=0,tx=0,drag=0,rocks=[],M={};
