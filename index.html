@@ -1,1 +1,252 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1f"><title>Level Up Life: Mission Hub</title>
+<style>
+:root{--y:#f5d300;--bg:#0a0e1f;--pn:#141c38;--pn2:#1f2a52;--tx:#eef2ff;--mu:#8e9ac4;--C:#9aa0b5;--R:#4aa8ff;--E:#b45cff;--L:#ffb020;--cut:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent;user-select:none}
+html{font-size:clamp(10px,3.4vh,16px)}
+body{background:radial-gradient(ellipse at 62% 18%,#3d5290 0,#1a2145 42%,#080b19 85%);color:var(--tx);font-family:Bahnschrift,"Arial Narrow",Impact,sans-serif;height:100vh;overflow:hidden;text-transform:uppercase;letter-spacing:.03em}
+#gl{position:fixed;inset:0;width:100%;height:100%}
+#ui{position:fixed;inset:0;pointer-events:none}#ui button,#ui input,#ui .pg,#ui .tick{pointer-events:auto}
+button{font:inherit;text-transform:inherit;letter-spacing:inherit;color:var(--tx);cursor:pointer;border:0}
+button:focus-visible,input:focus-visible{outline:2px solid var(--y)}
+.top{position:absolute;top:6px;left:8px;right:8px;display:flex;justify-content:space-between;align-items:flex-start}
+.me{display:flex;gap:8px;background:#0008;padding:5px 12px 5px 5px;clip-path:var(--cut);border-left:3px solid var(--y)}
+.av{width:2.6rem;height:2.6rem;background:var(--pn2);display:grid;place-items:center;font-size:1.7rem}
+.me small{color:var(--mu);font-size:.7rem}.bar{height:.4rem;background:#fff2;margin-top:3px;width:9rem}.bar i{display:block;height:100%;background:var(--y);transition:width .5s}
+.cur{display:flex;gap:6px;align-items:center}.cur span{background:#0009;padding:4px 10px;border-radius:2rem;border:1px solid #f5d30055;font-size:.85rem}
+.col{position:absolute;display:flex;flex-direction:column;gap:7px;width:clamp(120px,24vw,230px)}
+.L{left:8px;top:4rem}.Rr{right:8px;top:4rem}
+.ban{position:relative;text-align:left;padding:.55rem .7rem;min-height:2.9rem;background:linear-gradient(100deg,#5b3fd1aa,#1f2a52cc);border:1px solid #fff3;clip-path:var(--cut);font-size:.95rem;font-weight:700}
+.ban small{display:block;color:#ffe97a;font-size:.68rem;font-weight:400}
+.ban.sale{background:linear-gradient(100deg,#c7861aaa,#5a3a0acc)}.ban.draw{background:linear-gradient(100deg,#8a2be2cc,#2a1050cc)}
+.tag{position:absolute;top:-5px;right:2px;background:#ff3b5c;font-size:.6rem;padding:1px 5px}
+.claim{background:#000a;border:1px solid var(--y);padding:6px;text-align:center;clip-path:var(--cut)}.claim button{margin-top:4px;width:100%;background:repeating-linear-gradient(-45deg,var(--y),var(--y) 7px,#c9ab00 7px,#c9ab00 14px);color:#000;font-weight:700;padding:3px}
+.mode{height:3.1rem;text-align:left;padding:0 .8rem;font-weight:700;background:linear-gradient(90deg,#0b1020,#2a3a70);border:1px solid #fff3;clip-path:var(--cut)}.mode small{display:block;font-size:.65rem;color:var(--y);font-weight:400}
+.bot{position:absolute;bottom:6px;left:8px;right:8px;display:flex;gap:7px;align-items:flex-end}
+.nb{flex:1;max-width:170px;height:3rem;background:linear-gradient(#1b2547,#0c1228);border:1px solid #f5d30066;clip-path:var(--cut);font-weight:700;font-size:.85rem}
+.nb.big{max-width:none;flex:0 0 clamp(120px,22vw,210px);background:linear-gradient(#f5d300,#c9ab00);color:#000;font-size:1rem}
+.tick{flex:1;height:2rem;background:#0007;padding:.4rem .8rem;font-size:.8rem;color:#cfd8ff;overflow:hidden;white-space:nowrap;border-bottom:2px solid var(--y)}
+.pg{position:absolute;inset:0;background:#080d1cf2;display:flex;flex-direction:column;animation:in .22s}
+@keyframes in{from{transform:translateX(30px);opacity:0}}
+.ph{display:flex;align-items:center;gap:12px;padding:8px 10px;border-bottom:1px solid #f5d30044}.ph h1{font-size:1.2rem;flex:1}
+.bk{background:none;color:var(--y);font-size:1.5rem}
+.pb{flex:1;display:flex;gap:10px;padding:10px;min-height:0}
+.tabs{width:clamp(100px,19vw,170px);display:flex;flex-direction:column;gap:6px}.tabs button{padding:.7rem .6rem;text-align:left;background:#ffffff14;font-weight:700;font-size:.85rem}.tabs button.on{background:#e8ecf6;color:#111}
+.ct{flex:1;overflow-y:auto;min-width:0}
+.pg.half{background:none;pointer-events:none}.pg.half>*{pointer-events:auto}.pg.half .ph{width:50%}.pg.half .pb{margin-left:50%;background:#080d1cdd}.pg.half .tabs{width:5.5rem}
+.ev{background:linear-gradient(90deg,#14405f,#0f2b4a);padding:10px;margin-bottom:10px;display:flex;gap:12px;align-items:center}
+.trk{flex:1;display:flex;align-items:center}.ms{flex:1;text-align:center;position:relative}.ms:before{content:"";position:absolute;top:2.1rem;left:-50%;right:50%;height:4px;background:#fff3}.ms.ok:before{background:var(--y)}.ms:first-child:before{display:none}
+.ms .bx{width:2.6rem;height:2.6rem;margin:auto;display:grid;place-items:center;font-size:1.4rem;background:#5b3fd1;position:relative}.ms .dm{display:inline-block;margin-top:.3rem;width:1.5rem;height:1.5rem;line-height:1.5rem;background:#1c2748;transform:rotate(45deg);font-size:.65rem}.ms .dm b{display:block;transform:rotate(-45deg)}
+.ms.ok .dm{background:var(--y);color:#000}
+.task{display:flex;gap:10px;align-items:center;background:#ffffff10;padding:8px 10px;margin-bottom:8px;border-top:1px solid #fff2}
+.task .ic{width:2.6rem;height:2.6rem;background:#2e4a7a;display:grid;place-items:center;font-size:1.3rem}.task .g{flex:1}.task .pr{height:.55rem;background:#ffffff22;margin-top:5px}.task .pr i{display:block;height:100%;background:var(--y)}
+.go{background:#eef2ff;color:#111;font-weight:700;padding:.5rem 1.1rem}.go:disabled,.done{background:#1b3a2a;color:#5be58a}
+.sm{background:var(--y);color:#000;font-weight:700;padding:.45rem .9rem;clip-path:var(--cut)}.sm.alt{background:#2a3568;color:#fff}.sm:disabled{opacity:.4}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(5.6rem,1fr));gap:8px}
+.it{background:#ffffff12;padding:8px 4px;text-align:center;border-bottom:4px solid var(--C);font-size:.65rem;position:relative}.it .i{font-size:2rem}.it.lock .i{filter:brightness(0);opacity:.3}
+.it.R{border-color:var(--R)}.it.E{border-color:var(--E)}.it.L{border-color:var(--L);box-shadow:0 0 12px #ffb02055}.it.eq{outline:2px solid var(--y)}
+.it button{margin-top:4px;font-size:.65rem;padding:3px 8px}
+.rC{color:var(--C)}.rR{color:var(--R)}.rE{color:var(--E)}.rL{color:var(--L)}.s{color:var(--mu);font-size:.75rem}
+.box{font-size:5rem;display:inline-block}.shake{animation:sh .45s infinite}@keyframes sh{25%{transform:rotate(-10deg) scale(1.08)}75%{transform:rotate(10deg) scale(1.08)}}
+.modal{position:fixed;inset:0;background:#000c;display:grid;place-items:center;z-index:50;pointer-events:auto}
+.pop{background:#141c38;padding:1.4rem 2.2rem;text-align:center;border:3px solid var(--C);min-width:14rem}.pop.R{border-color:var(--R)}.pop.E{border-color:var(--E)}.pop.L{border-color:var(--L);box-shadow:0 0 45px #ffb020aa}.pop .big{font-size:5rem;animation:pp .5s}@keyframes pp{from{transform:scale(.2) rotate(-30deg);opacity:0}}
+.toast{position:fixed;left:50%;bottom:4.2rem;transform:translateX(-50%);background:#101a3a;border:2px solid var(--y);padding:.5rem 1rem;z-index:60;font-size:.85rem;text-align:center;max-width:80%}
+input{font:inherit;background:#1f2a52;color:#fff;border:0;padding:.55rem;width:100%;text-transform:none}.row{display:flex;gap:8px;margin-bottom:8px}
+.fr{display:flex;gap:10px;align-items:center;background:#ffffff10;padding:8px;margin-bottom:6px}
+#rot{display:none;position:fixed;inset:0;background:#080b19;z-index:99;place-items:center;text-align:center;font-size:1.2rem;padding:30px}
+@media (orientation:portrait){#rot{display:grid}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
 
+#fog{position:fixed;inset:0;pointer-events:none;overflow:hidden}#fog i{position:absolute;left:-30%;width:160%;height:45%;background:radial-gradient(ellipse,#a9bcff33,transparent 65%);animation:dr 30s linear infinite}#fog i:nth-child(1){top:4%}#fog i:nth-child(2){top:52%;animation-duration:44s;animation-direction:reverse}@keyframes dr{to{transform:translateX(20%)}}#fog:after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,#000b)}
+.scr{position:absolute;inset:0;background:radial-gradient(ellipse at 60% 20%,#3d5290,#080b19 80%) center/cover;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;pointer-events:auto}.scr:before{content:"";position:absolute;inset:0;background:linear-gradient(#0006,#000d)}.scr>*{position:relative}
+.logo{font-size:2.6rem;font-weight:900;color:#fff;text-shadow:0 0 22px #f5d300aa;transform:skew(-8deg);text-align:center}.logo b{color:var(--y)}
+.lbar{position:absolute;left:8%;right:8%;bottom:1rem}
+.ico{width:100%;height:100%;object-fit:contain}.it .i{height:2.6rem;display:grid;place-items:center}.sic{width:2.6rem;height:2.6rem;display:grid;place-items:center;font-size:2rem}.pop .big{width:6rem;height:6rem;margin:auto}.ci{height:1.1em;width:1.1em;vertical-align:-.2em;margin-right:3px}.av{border:0;padding:3px;cursor:pointer}
+.rk{display:flex;gap:12px;align-items:center;background:linear-gradient(90deg,#2a1f5a,#14405f);padding:12px;margin-bottom:10px}.badge{width:3.8rem;height:4.2rem;flex:none;clip-path:polygon(50% 0,100% 15%,100% 70%,50% 100%,0 70%,0 15%);background:linear-gradient(#ffe56a,#a07800);display:grid;place-items:center;color:#000;font-weight:900;font-size:1.6rem}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}.stats div{background:#ffffff12;padding:8px;text-align:center;font-size:.75rem;color:var(--mu)}.stats b{display:block;font-size:1.2rem;color:var(--y)}
+.track{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px}.lv{min-width:6.6rem;background:#ffffff12;padding:8px;text-align:center;border-top:3px solid #fff3;font-size:.75rem}.lv.ok{border-color:var(--y)}.lv .sm{margin-top:5px;padding:.3rem .6rem}
+.rkl{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.rkl span{padding:4px 8px;background:#ffffff12;font-size:.75rem}.rkl span.on{background:var(--y);color:#000}
+#wp{position:fixed;inset:-6%;background:center/cover;animation:kb 50s ease-in-out infinite alternate}@keyframes kb{to{transform:scale(1.1) translate(-2%,1%)}}
+#tod{position:fixed;inset:0;pointer-events:none;background:#06102c;opacity:0;transition:opacity 5s}
+.clk{position:absolute;top:6px;left:50%;transform:translateX(-50%);background:#0008;padding:3px 12px;font-size:.75rem;border-bottom:2px solid var(--y);white-space:nowrap}
+</style></head><body>
+<div id="wp"></div><canvas id="gl"></canvas><div id="tod"></div><div id="fog"><i></i><i></i></div><div id="ui"></div>
+<div id="rot">📱↻<br>Rotate your phone to landscape<br>to enter the Mission Hub</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+/* ===== CLOUD SETUP: paste your Firebase web-app config here (see setup steps). Leave empty = local-only mode. ===== */
+const FB_CONFIG={apiKey:"",authDomain:"",projectId:"",appId:""};
+const RAR={C:{n:'Common',w:60,dupe:5,price:40,c:0x9aa0b5},R:{n:'Rare',w:27,dupe:15,price:120,c:0x4aa8ff},E:{n:'Epic',w:10,dupe:40,price:300,c:0xb45cff},L:{n:'Legendary',w:3,dupe:120,price:800,c:0xffb020}};
+const ITEMS=[['Gun','🔫','Rusty Pistol','C'],['Gun','🔫','Street SMG','C'],['Gun','🔫','Pump Shotgun','C'],['Gun','🔫','Recruit Rifle','C'],['Gun','🏹','Hunter Bow','R'],['Gun','🔫','Neon M4','R'],['Gun','🔫','Frost Kilo','R'],['Gun','🔫','Inferno AK','E'],['Gun','🔫','Thunder Shotgun','E'],['Gun','🔫','Gold Dragon DL','L'],['Gun','🚀','Galaxy Launcher','L'],
+['Skin','👕','Plain Hoodie','C'],['Skin','🧢','Streak Cap','C'],['Skin','🧤','Grip Gloves','C'],['Skin','🕶️','Shade Specs','R'],['Skin','🥋','Dojo Gi','R'],['Skin','🧥','Shadow Coat','E'],['Skin','🛡️','Knight Armor','E'],['Skin','👑','Royal Crown','L'],['Skin','🔥','Phoenix Cape','L'],
+['Character','🧑‍🎓','Rookie Scholar','C'],['Character','🧑‍🍳','Chef Chip','C'],['Character','🧑‍💻','Code Ninja','R'],['Character','🧙','Focus Wizard','R'],['Character','🥷','Shadow Ninja','E'],['Character','🧛','Night Owl','E'],['Character','🐉','Dragon Lord','L'],['Character','🤖','Mecha Mind','L'],
+['Bundle','📦','Starter Pack','C'],['Bundle','🎒','Explorer Bundle','R'],['Bundle','🎁','Warrior Bundle','E'],['Bundle','💎','Royal Bundle','L'],
+['Pet','🐱','Study Cat','C'],['Pet','🐶','Loyal Pup','C'],['Pet','🦊','Swift Fox','R'],['Pet','🦉','Wise Owl','R'],['Pet','🐺','Moon Wolf','E'],['Pet','🦄','Unicorn','L']].map((a,i)=>({id:i,type:a[0],ic:a[1],name:a[2],r:a[3]}));
+const TITLES=['Rookie','Grinder','Challenger','Veteran','Elite','Master','Champion','Legend'];
+const DIFF={Easy:[20,10],Medium:[40,20],Hard:[80,40],Boss:[200,100]};
+const MS=[[2,'🪙','100 coins'],[4,'🗝️','2 keys'],[6,'🎁','3 keys + 1 token']];
+const CHAT=['[WORLD] Finish 2 missions to open the first milestone chest','[TIP] Every 3 missions = 1 game token = 30 min of CODM','[SQUAD] Streak bonus grows up to 7 days. Do not break it','[WORLD] Boss missions give 2 extra keys','[TIP] Epic or better is guaranteed every 10 draws'];
+const KEY='levelupLife.v1';let OFF=0;try{OFF=+localStorage.getItem('lul.off')||0}catch(e){}
+const now=()=>new Date(Date.now()+OFF),today=()=>now().toLocaleDateString('en-CA'),yest=()=>{const d=now();d.setDate(d.getDate()-1);return d.toLocaleDateString('en-CA')};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S,pg='',tb='',ci=0;const ui=document.getElementById('ui');
+function fresh(){return{name:'Player',id:'ID'+Math.floor(1e7+Math.random()*9e7),lvl:1,xp:0,coins:50,keys:3,tokens:0,streak:0,last:'',pity:0,opens:0,owned:{},friends:[],tcount:{d:'',n:0},eq:{gun:-1,skin:-1,char:-1},ms:{d:'',c:[]},lr:[],reg:0,total:0,rev:0,wp:'default',
+quests:[{id:1,n:'Wash clothes',d:'Easy',done:''},{id:2,n:'Study 1 focused hour',d:'Medium',done:''},{id:3,n:'Prepare notes',d:'Medium',done:''},{id:4,n:'Work on my website 1 hour',d:'Hard',done:''},{id:5,n:'Finish website v1 and deploy',d:'Boss',done:''}]}}
+function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}S=Object.assign(fresh(),S||{})}
+function lsave(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){S.rev=(S.rev||0)+1;lsave();cloudSoon()}
+const need=l=>100+(l-1)*50,pick=a=>a[Math.floor(Math.random()*a.length)];
+function toast(m){const t=document.createElement('div');t.className='toast';t.innerHTML=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2800)}
+function addXP(n){S.xp+=n;let up=0;while(S.xp>=need(S.lvl)){S.xp-=need(S.lvl);S.lvl++;S.keys+=2;S.coins+=50;up++}if(up)toast('LEVEL UP! Level '+S.lvl+' · +2 🗝️ +50 🪙')}
+function nToday(){return S.tcount.d===today()?S.tcount.n:0}
+function ms(){if(S.ms.d!==today())S.ms={d:today(),c:[]};return S.ms}
+function doQuest(id){const q=S.quests.find(x=>x.id===id),t=today();if(q.done===t||q.done==='forever')return;const [xp,co]=DIFF[q.d];q.done=q.d==='Boss'?'forever':t;
+if(S.last!==t){S.streak=S.last===yest()?S.streak+1:1;S.last=t}
+if(S.tcount.d!==t)S.tcount={d:t,n:0};S.tcount.n++;S.total=(S.total||0)+1;
+const sb=Math.min(S.streak,7)*2;S.coins+=co+sb;let m='+'+xp+' XP · +'+(co+sb)+' 🪙';
+const r=Math.random();let k=r<.6?1:0;if(r>.9)k=3;if(q.d==='Boss')k+=2;S.keys+=k;if(k)m+=' · +'+k+' 🗝️'+(k===3?' JACKPOT!':'');
+if(S.tcount.n%3===0){S.tokens++;m+=' · +1 ⏱️ token'}
+addXP(xp);toast(m);save();render()}
+function claimMs(i){const m=ms();if(m.c.includes(i)||nToday()<MS[i][0])return;m.c.push(i);if(i===0)S.coins+=100;if(i===1)S.keys+=2;if(i===2){S.keys+=3;S.tokens++}save();render();toast('Milestone claimed: '+MS[i][2])}
+function addQuest(){const n=document.getElementById('qn').value.trim();if(!n)return toast('Type a mission name');S.quests.push({id:Date.now(),n,d:document.getElementById('qd').value,done:''});tb='Daily Missions';save();render()}
+function delQuest(id){if(confirm('Delete this mission?')){S.quests=S.quests.filter(q=>q.id!==id);save();render()}}
+function useToken(){if(S.tokens<1)return toast('No tokens yet. Finish 3 missions to earn one.');if(confirm('Spend 1 token for 30 minutes of game time?')){S.tokens--;save();render();toast('Enjoy 30 minutes. You earned it!')}}
+function roll(){let r;if(S.pity>=9)r=Math.random()<.8?'E':'L';else{let x=Math.random()*100,a=0;r='C';for(const k of'CREL'){a+=RAR[k].w;if(x<a){r=k;break}}}return pick(ITEMS.filter(i=>i.r===r))}
+function openCrate(){if(S.keys<1)return toast('No keys. Finish missions or buy one in the Store.');S.keys--;S.opens++;const it=roll();if(it.r==='E'||it.r==='L')S.pity=0;else S.pity++;
+const dupe=S.owned[it.id]>0;S.owned[it.id]=(S.owned[it.id]||0)+1;if(dupe)S.coins+=RAR[it.r].dupe;save();
+document.getElementById('bx').classList.add('shake');document.getElementById('ob').disabled=true;
+setTimeout(()=>{const m=document.createElement('div');m.className='modal';m.onclick=()=>{m.remove();render()};
+m.innerHTML='<div class="pop '+it.r+'"><div class="r'+it.r+'">'+RAR[it.r].n+(it.r==='L'?' ✨':'')+'</div><div class="big">'+ic(it)+'</div><h2>'+esc(it.name)+'</h2><div class="s">'+it.type+(dupe?' · Duplicate +'+RAR[it.r].dupe+' 🪙':' · NEW!')+'</div><p class="s" style="margin-top:12px">Tap to continue</p></div>';document.body.appendChild(m)},1100)}
+function seed(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return()=>{h=(h*1664525+1013904223)>>>0;return h/4294967296}}
+function offers(){const r=seed(today()),o=[];while(o.length<3){const i=ITEMS[Math.floor(r()*ITEMS.length)];if(!o.includes(i))o.push(i)}return o}
+function buyKey(){if(S.coins<50)return toast('Need 50 🪙');S.coins-=50;S.keys++;save();render()}
+function buyItem(id){const p=RAR[ITEMS[id].r].price;if(S.owned[id])return;if(S.coins<p)return toast('Need '+p+' 🪙');S.coins-=p;S.owned[id]=1;save();render();toast('Bought '+ITEMS[id].ic+' '+ITEMS[id].name)}
+function equip(t,id){S.eq[t]=id;save();look();render()}
+function code(){return btoa(unescape(encodeURIComponent(JSON.stringify({n:S.name,i:S.id,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖'}))))}
+function addFriend(){try{const o=JSON.parse(decodeURIComponent(escape(atob(document.getElementById('fc').value.trim()))));if(!o.i||o.i===S.id)throw 0;S.friends=S.friends.filter(f=>f.i!==o.i);S.friends.push(o);save();render();toast('Friend added: '+esc(o.n))}catch(e){toast('Invalid friend code')}}
+function copy(t){try{navigator.clipboard.writeText(t);toast('Copied!')}catch(e){toast('Copy failed')}}
+function setName(){const v=document.getElementById('pn').value.trim();if(v){S.name=v.slice(0,16);save();render()}}
+function importData(){try{const o=JSON.parse(document.getElementById('bk').value);if(!o.quests)throw 0;S=Object.assign(fresh(),o);save();look();render();toast('Backup loaded')}catch(e){toast('Invalid backup')}}
+function resetAll(){if(confirm('Erase ALL progress?')){S=fresh();save();look();go('')}}
+function go(p,t){pg=p;tb=t||{missions:'Daily Missions',loadout:'Gun',clan:'Friends',profile:'Overview'}[p]||'';render();if(typeof tx!=='undefined')tx=p==='loadout'?-1.5:0}
+const IC=['pistol-gun','submachine-gun','sawed-off-shotgun','rifle','bow-arrow','assault-rifle','sniper-rifle','ak47','shotgun','machine-gun','bazooka','hoodie','baseball-cap','gloves','sunglasses','black-belt','cloak','armor-vest','crown','cape','graduate-cap','chef-toque','ninja-head','wizard-face','ninja-mask','vampire-dracula','dragon-head','robot-golem','cardboard-box','backpack','open-treasure-chest','emerald','cat','sitting-dog','fox-head','owl','wolf-head','unicorn'],ICC={C:'9aa0b5',R:'4aa8ff',E:'b45cff',L:'ffb020'};
+const IU=(n,c)=>'https://api.iconify.design/game-icons/'+n+'.svg?color=%23'+c,iconUrl=it=>IU(IC[it.id],ICC[it.r]);
+const fb=e=>' onerror="this.replaceWith(document.createTextNode(\''+e+'\'))">';
+const ic=it=>'<img class="ico" alt="" src="'+iconUrl(it)+'"'+fb(it.ic),cim=(n,c,e)=>'<img class="ci" alt="" src="'+IU(n,c)+'"'+fb(e);
+const cur=()=>'<div class="cur"><span>'+cim('two-coins','f5d300','🪙')+S.coins+'</span><span>'+cim('key','ffffff','🗝️')+S.keys+'</span><span>'+cim('stopwatch','3ddbd9','⏱️')+S.tokens+'</span></div>';
+const tabsH=a=>'<div class="tabs">'+a.map(t=>'<button class="'+(tb===t?'on':'')+'" onclick="tb=\''+t+'\';render()">'+t+'</button>').join('')+'</div>';
+const page=(title,body,half)=>'<div class="pg'+(half?' half':'')+'"><div class="ph"><button class="bk" aria-label="Back" onclick="go(\'\')">◀</button><h1>'+title+'</h1>'+cur()+'</div><div class="pb">'+body+'</div></div>';
+function home(){const d=S.quests.filter(q=>q.d!=='Boss'),dn=d.filter(q=>q.done===today()).length,n=nToday(),m=ms(),cl=MS.findIndex((x,i)=>n>=x[0]&&!m.c.includes(i)),o=offers()[0];
+return '<div class="top"><div class="me"><button class="av" aria-label="Profile" onclick="go(\'profile\')">'+(S.eq.char>=0?ic(ITEMS[S.eq.char]):'🪖')+'</button><div><b>'+esc(S.name)+'</b> <small>LV '+S.lvl+' · '+TITLES[Math.min(Math.floor((S.lvl-1)/3),7)]+' · 🔥'+S.streak+'</small><div class="bar"><i style="width:'+S.xp/need(S.lvl)*100+'%"></i></div></div></div>'+cur()+'</div>'+
+'<div class="clk" id="clk"></div><div class="col L"><button class="ban" onclick="go(\'missions\')">'+(cl>=0?'<span class="tag">NEW</span>':'')+'EVENTS<small>Milestone chests '+n+'/6</small></button><button class="ban" onclick="go(\'missions\')">DAILY MISSIONS<small>'+dn+'/'+d.length+' complete today</small></button><button class="ban sale" onclick="go(\'store\')">SALES<small>'+esc(o.name)+' offer</small></button>'+
+(cl>=0?'<div class="claim">🎁 '+MS[cl][2]+'<button onclick="claimMs('+cl+')">CLAIM</button></div>':'')+'</div>'+
+'<div class="col Rr"><button class="mode" onclick="go(\'missions\',\'Boss Missions\')">BOSS MISSIONS<small>Big projects</small></button><button class="ban draw" onclick="go(\'crate\')" style="height:3.1rem">ARMORY DRAW<small>'+S.keys+' keys ready</small></button><button class="mode" onclick="go(\'clan\',\'Leaderboard\')">FRIEND LEAGUE<small>Rank #'+rank()+'</small></button></div>'+
+'<div class="bot"><button class="nb" onclick="go(\'store\')">🛒 STORE</button><button class="nb" onclick="go(\'loadout\')">🔫 LOADOUT</button><button class="nb" onclick="go(\'clan\')">👥 CLAN</button><button class="nb" onclick="go(\'profile\',\'Safe House\')">🗂️ SAFE HOUSE</button><div class="tick" id="tk">'+CHAT[ci%CHAT.length]+'</div><button class="nb big" onclick="useToken()">▶ PLAY CODM<br><small>1 ⏱️ = 30 min</small></button></div>'}
+function all(){return[{n:S.name,i:S.id,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖',me:1}].concat(S.friends).sort((a,b)=>b.l-a.l||b.c-a.c)}
+const rank=()=>all().findIndex(f=>f.me)+1;
+function taskRow(q){const t=today(),dn=q.done===t||q.done==='forever',[xp,co]=DIFF[q.d];return '<div class="task"><div class="ic">'+(q.d==='Boss'?'👹':'⚔️')+'</div><div class="g"><b>'+esc(q.n)+'</b> <span class="s">('+(dn?1:0)+'/1)</span><div class="pr"><i style="width:'+(dn?100:0)+'%"></i></div><div class="s">'+q.d+' · '+xp+' XP · '+co+' 🪙 · chance of 🗝️</div></div>'+(dn?'<button class="go done" disabled>✔ DONE</button>':'<button class="go" onclick="doQuest('+q.id+')">COMPLETE</button>')+'<button class="sm alt" aria-label="Delete" onclick="delQuest('+q.id+')">🗑</button></div>'}
+function pMissions(){const n=nToday(),m=ms();let c;
+if(tb==='New Mission')c='<h2>Create a mission</h2><div class="row" style="margin-top:8px"><input id="qn" maxlength="50" placeholder="e.g. Revise chemistry chapter"></div><div class="row"><select id="qd" style="font:inherit;background:#1f2a52;color:#fff;padding:.5rem;flex:1"><option>Easy</option><option selected>Medium</option><option>Hard</option><option>Boss</option></select><button class="sm" onclick="addQuest()">ADD</button></div>';
+else{const ev=tb==='Daily Missions'?'<div class="ev"><div style="text-align:center"><div style="font-size:2rem">📈</div><b>'+n+'/6</b></div><div class="trk">'+MS.map((x,i)=>{const ok=m.c.includes(i),rd=n>=x[0];return '<div class="ms'+(rd?' ok':'')+'"><div class="bx">'+x[1]+'</div><div class="s">'+x[2]+'</div><div class="dm"><b>'+x[0]+'</b></div><br>'+(ok?'<span class="s">CLAIMED</span>':rd?'<button class="sm" onclick="claimMs('+i+')">CLAIM</button>':'')+'</div>'}).join('')+'</div></div>':'';
+c=ev+S.quests.filter(q=>(q.d==='Boss')===(tb==='Boss Missions')).map(taskRow).join('')||'<p class="s">No missions here yet. Add one in New Mission.</p>'}
+return page('Missions · Streak 🔥'+S.streak,tabsH(['Daily Missions','Boss Missions','New Mission'])+'<div class="ct">'+c+'</div>')}
+function pStore(){const o=offers();return page('Store','<div class="ct"><h2>Key shop</h2><div class="fr"><span style="font-size:2rem">🗝️</span><b style="flex:1">1 Crate key</b><button class="sm" onclick="buyKey()">50 🪙</button></div><h2 style="margin-top:12px">Daily offers</h2>'+o.map(i=>'<div class="fr"><span class="sic">'+ic(i)+'</span><div style="flex:1"><b>'+esc(i.name)+'</b><div class="s r'+i.r+'">'+RAR[i.r].n+' '+i.type+'</div></div>'+(S.owned[i.id]?'<span class="s">OWNED</span>':'<button class="sm" onclick="buyItem('+i.id+')">'+RAR[i.r].price+' 🪙</button>')+'</div>').join('')+'<p class="s">Offers change every day.</p></div>')}
+function pCrate(){const l=9-S.pity;return page('Armory Draw','<div class="ct" style="text-align:center;padding-top:1rem"><div class="box" id="bx">🎁</div><p class="s" style="margin:8px">Keys '+S.keys+' · Draws '+S.opens+' · Epic+ guaranteed in '+(l<=0?'your next draw':l+' draws')+'</p><button class="sm" id="ob" onclick="openCrate()">OPEN (1 🗝️)</button><p class="s" style="margin-top:12px">'+'CREL'.split('').map(k=>'<span class="r'+k+'">'+RAR[k].n+' '+RAR[k].w+'%</span>').join(' · ')+'</p><p class="s">Keys only come from real missions.</p></div>')}
+function grid(list,mode){return '<div class="grid">'+list.map(i=>{const n=S.owned[i.id],on=S.eq[i.type.toLowerCase()]===i.id;return '<div class="it '+i.r+(n?'':' lock')+(on?' eq':'')+'"><div class="i">'+ic(i)+'</div>'+(n?esc(i.name)+'<div class="r'+i.r+'">'+RAR[i.r].n+(n>1?' x'+n:'')+'</div>'+(mode&&['Gun','Skin','Character'].includes(i.type)?'<button class="sm'+(on?' alt':'')+'" onclick="equip(\''+i.type.toLowerCase()+'\','+(on?-1:i.id)+')">'+(on?'UNEQUIP':'EQUIP')+'</button>':''):'???')+'</div>'}).join('')+'</div>'}
+function pLoadout(){const l=ITEMS.filter(i=>i.type===tb&&S.owned[i.id]);return page('Loadout (drag the soldier)',tabsH(['Gun','Skin','Character'])+'<div class="ct">'+(l.length?grid(l,1):'<p class="s">Nothing owned here. Win items in Armory Draw.</p>')+'</div>',1)}
+function pSafe(){const T=['All','Gun','Skin','Character','Bundle','Pet'],l=ITEMS.filter(i=>tb==='All'||i.type===tb),o=Object.keys(S.owned).length;return page('Safe House '+o+'/'+ITEMS.length,tabsH(T)+'<div class="ct">'+grid(l,0)+'</div>')}
+function pClan(){let c;if(tb==='Leaderboard')c=all().map((f,i)=>'<div class="fr"><span style="font-size:1.8rem">'+esc(f.a)+'</span><b style="flex:1">#'+(i+1)+' '+esc(f.n)+(f.me?' (you)':'')+'</b><span class="s">Lv '+f.l+' · '+f.c+' items · 🔥'+f.s+'</span></div>').join('');
+else if(tb==='Cloud')c=cloudTab();else if(tb==='Backup')c='<textarea id="bk" rows="3" style="width:100%;background:#1f2a52;color:#fff;border:0;padding:8px;text-transform:none" placeholder="Paste backup to import"></textarea><div class="row" style="margin-top:8px"><button class="sm alt" onclick="document.getElementById(\'bk\').value=JSON.stringify(S)">EXPORT</button><button class="sm alt" onclick="importData()">IMPORT</button><button class="sm alt" onclick="resetAll()">RESET</button></div>';
+else c='<div class="fr"><div style="flex:1"><div class="s">Your ID</div><b>'+S.id+'</b></div><button class="sm alt" onclick="copy(\''+S.id+'\')">COPY</button></div><div class="row"><input id="pn" value="'+esc(S.name)+'" maxlength="16"><button class="sm" onclick="setName()">SAVE</button></div><div class="s" style="margin:8px 0">Friend code: friends paste it to add you</div><div class="row"><input readonly value="'+code()+'"><button class="sm" onclick="copy(\''+code()+'\')">COPY</button></div><div class="row"><input id="fc" placeholder="Paste a friend code"><button class="sm" onclick="addFriend()">ADD</button></div><div class="row"><input id="fid" placeholder="Or type a player ID (needs Google login)"><button class="sm" onclick="addFriendId()">FIND</button></div>';
+return page('Clan',tabsH(['Friends','Leaderboard','Cloud','Backup'])+'<div class="ct">'+c+'</div>')}
+function render(){if(busy||inLogin)return;const f={missions:pMissions,store:pStore,crate:pCrate,loadout:pLoadout,profile:pProfile,clan:pClan}[pg];ui.innerHTML=f?f():home()}
+const RANKS=[[1,'Rookie'],[5,'Veteran'],[10,'Elite'],[15,'Pro'],[20,'Master'],[30,'Grand Master'],[40,'Legend']],rk=l=>{let r=0;RANKS.forEach((x,i)=>{if(l>=x[0])r=i});return r},lrew=n=>n%5?[50,1]:[150,3];
+function claimLvl(n){if(S.lvl<n||S.lr.includes(n))return;const[c,k]=lrew(n);S.lr.push(n);S.coins+=c;S.keys+=k;save();render();toast('Level '+n+' reward: +'+c+' 🪙 +'+k+' 🗝️')}
+function pProfile(){let c;
+if(tb==='Safe House'){const own=Object.keys(S.owned).length;c='<div class="s" style="margin-bottom:6px">Collection '+own+'/'+ITEMS.length+'</div>'+['Gun','Skin','Character','Bundle','Pet'].map(t=>{const l=ITEMS.filter(i=>i.type===t);return '<h2 style="margin:8px 0 6px">'+t+'s '+l.filter(i=>S.owned[i.id]).length+'/'+l.length+'</h2>'+grid(l,0)}).join('')}
+else{const r=rk(S.lvl),nx=RANKS[r+1],lv=[];for(let n=2;n<=Math.max(12,S.lvl+5);n++){const[cc,k]=lrew(n),got=S.lr.includes(n),can=S.lvl>=n;lv.push('<div class="lv'+(can?' ok':'')+'"><b>LV '+n+'</b><div>'+cc+' 🪙<br>'+k+' 🗝️</div>'+(got?'<div class="s">CLAIMED</div>':can?'<button class="sm" onclick="claimLvl('+n+')">CLAIM</button>':'<div class="s">LOCKED</div>')+'</div>')}
+c='<div class="rk"><div class="badge">'+(r+1)+'</div><div style="flex:1"><b style="font-size:1.2rem">'+esc(S.name)+'</b> <span class="s">'+S.id+'</span><div><b>'+RANKS[r][1]+'</b> <span class="s">Lv '+S.lvl+'</span></div><div class="bar" style="width:100%"><i style="width:'+S.xp/need(S.lvl)*100+'%"></i></div><div class="s">'+S.xp+'/'+need(S.lvl)+' XP'+(nx?' · next rank '+nx[1]+' at Lv '+nx[0]:' · max rank')+'</div></div></div>'+
+'<div class="stats"><div><b>'+(S.total||0)+'</b>Missions done</div><div><b>🔥'+S.streak+'</b>Day streak</div><div><b>'+S.opens+'</b>Draws</div><div><b>'+Object.keys(S.owned).length+'/'+ITEMS.length+'</b>Collection</div><div><b>#'+rank()+'</b>Friend league</div><div><b>'+S.tokens+'</b>Game tokens</div></div>'+
+'<h2>Ranks</h2><div class="rkl">'+RANKS.map((x,i)=>'<span class="'+(i===r?'on':'')+'">'+x[1]+' (Lv '+x[0]+')</span>').join('')+'</div><h2>Level rewards</h2><div class="track">'+lv.join('')+'</div>'}
+return page('Profile',tabsH(['Overview','Safe House'])+'<div class="ct">'+c+'</div>')}
+/* ---------- CLOUD (Firebase Auth + Firestore) ---------- */
+let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogin=0,lastDay='';
+const TO=()=>({signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
+function cloudInit(){if(!FB_CONFIG.apiKey||typeof firebase==='undefined')return;try{firebase.initializeApp(FB_CONFIG);AU=firebase.auth();DB=firebase.firestore();
+AU.onAuthStateChanged(async u=>{USER=u;if(u){cst='Signing in...';await cloudLoad()}else{cst='Local only';if(unsub)unsub()}upd();render()})}catch(e){cst='Cloud error';console.warn(e)}}
+function gLogin(){if(!AU)return toast('Cloud is not set up yet. Paste your Firebase config first.');const p=new firebase.auth.GoogleAuthProvider();AU.signInWithPopup(p).catch(e=>{if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')AU.signInWithRedirect(p);else if(e.code!=='auth/popup-closed-by-user')toast('Login failed: '+esc(e.code||e.message))})}
+async function cloudLoad(){try{await syncClock();const d=await DB.collection('saves').doc(USER.uid).get();
+if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){if((S.total||0)>0&&!confirm('Cloud save found: Level '+c.lvl+'. OK = use cloud progress. Cancel = keep THIS phone and overwrite the cloud.')){await cloudPush();cst='Synced ✓'}else{S=Object.assign(fresh(),c,{reg:1});lsave();look();toast('Cloud progress loaded ☁️')}}else await cloudPush()}
+else{if(!S.reg){S.name=(USER.displayName||'Player').split(' ')[0].slice(0,16);S.reg=1}await cloudPush()}
+cst='Synced ✓';listenFriends();if(inLogin&&S.reg){inLogin=0;loading()}}catch(e){cst='Sync failed';console.warn(e);toast('Cloud error. Check Firestore rules.')}}
+async function cloudPush(){if(!DB||!USER)return;try{cst='Saving...';upd();const b=DB.batch(),T=firebase.firestore.FieldValue.serverTimestamp();
+b.set(DB.collection('saves').doc(USER.uid),{data:JSON.stringify(S),rev:S.rev||0,dev:navigator.userAgent.slice(0,90),t:T});
+b.set(DB.collection('players').doc(USER.uid),{pid:S.id,n:S.name,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖',t:T});
+await b.commit();cst='Synced ✓'}catch(e){cst='Sync failed';console.warn(e)}upd()}
+function cloudSoon(){if(!USER)return;clearTimeout(tmr);cst='Saving...';tmr=setTimeout(cloudPush,2500)}
+function upd(){const e=document.getElementById('cs');if(e)e.textContent=cst}
+async function syncClock(){try{let ms;if(USER&&DB){const r=DB.collection('players').doc(USER.uid);await r.set({ping:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});ms=(await r.get({source:'server'})).data().ping.toMillis()}else{ms=(await(await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC',TO())).json()).unixtime*1000}if(ms>0){OFF=ms-Date.now();try{localStorage.setItem('lul.off',OFF)}catch(e){}}}catch(e){}}
+function listenFriends(){if(unsub)unsub();if(!DB||!USER)return;const ids=S.friends.map(f=>f.i).slice(0,10);if(!ids.length)return;
+unsub=DB.collection('players').where('pid','in',ids).onSnapshot(sn=>{sn.forEach(d=>{const x=d.data(),f=S.friends.find(q=>q.i===x.pid);if(f){f.n=x.n;f.l=x.l;f.c=x.c;f.s=x.s;f.a=x.a}});lsave();if(pg==='clan')render()})}
+async function addFriendId(){const v=document.getElementById('fid').value.trim().toUpperCase();if(!DB||!USER)return toast('Sign in with Google first (Clan > Cloud)');if(!v||v===S.id)return toast('Enter a friend\'s ID');
+try{const q=await DB.collection('players').where('pid','==',v).limit(1).get();if(q.empty)return toast('No player with that ID');const x=q.docs[0].data();S.friends=S.friends.filter(f=>f.i!==x.pid);S.friends.push({n:x.n,i:x.pid,l:x.l,c:x.c,s:x.s,a:x.a});save();listenFriends();render();toast('Friend added: '+esc(x.n))}catch(e){toast('Search failed')}}
+async function wallpaper(){if(S.wp==='default')return null;const k='lul.wp.'+S.wp+'.'+today();try{const c=localStorage.getItem(k);if(c)return c}catch(e){}let u=null;
+try{if(S.wp==='nasa'){const j=await(await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY',TO())).json();u=j.media_type==='image'?j.url:null}
+else{const d=now(),j=await(await fetch('https://en.wikipedia.org/api/rest_v1/feed/featured/'+d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0'),TO())).json();u=j.image&&j.image.thumbnail?j.image.thumbnail.source.replace(/\/\d+px-/,'/1280px-'):null}}catch(e){}
+if(u)try{localStorage.setItem(k,u)}catch(e){}return u}
+function cloudTab(){const ok=!!FB_CONFIG.apiKey,o=(v,t)=>'<option value="'+v+'"'+(S.wp===v?' selected':'')+'>'+t+'</option>';
+return '<div class="fr"><div style="flex:1"><b>Cloud save</b><div class="s" id="cs">'+(ok?cst:'Not set up yet')+'</div>'+(USER?'<div class="s" style="text-transform:none">'+esc(USER.email||'')+'</div>':'')+'</div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm alt" onclick="AU.signOut()">SIGN OUT</button>':'<button class="sm" onclick="gLogin()">SIGN IN WITH GOOGLE</button>')+'</div>'+(ok?'':'<p class="s">Paste your Firebase config at the top of the script to turn on cloud save and friends by ID.</p>')+
+'<div class="fr"><div style="flex:1"><b>Daily wallpaper</b><div class="s">New image every day. Free, no key.</div></div><select onchange="S.wp=this.value;save();toast(\'Applying...\');setTimeout(()=>location.reload(),700)" style="font:inherit;background:#1f2a52;color:#fff;padding:.5rem">'+o('default','Classic photo')+o('nasa','NASA space photo')+o('wiki','Wikipedia photo of the day')+'</select></div><p class="s">Server clock offset: '+Math.round(OFF/1000)+' s (daily reset uses real time, not your phone clock)</p>'}
+/* ---------- 3D ---------- */
+let R,SC,CAM,SOL,GUN,PR,RG,SOLM,MIX,BGM,GL3=0,tx=0,drag=0,rocks=[],M={};
+function mat(c){return new THREE.MeshStandardMaterial({color:c,roughness:.75,metalness:.2,flatShading:true})}
+function bx(w,h,d,x,y,z,m,p){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);(p||PR).add(o);return o}
+function look(){if(!R)return;if(RG)RG.material.color.set(S.eq.skin>=0?RAR[ITEMS[S.eq.skin].r].c:0xf5d300);if(SOLM){const cc=S.eq.char>=0?ITEMS[S.eq.char]:null;SOLM.traverse(o=>{if(o.isMesh&&o.material&&o.material.color)o.material.color.set(cc?new THREE.Color().setHSL((cc.id*.137)%1,.5,.72):0xffffff)})}if(S.eq.gun>=0&&GL3&&THREE.GLTFLoader&&GUN.userData.id!==S.eq.gun){GUN.userData.id=S.eq.gun;new THREE.GLTFLoader().load('assets/guns/'+S.eq.gun+'.glb',x=>{const m=x.scene,s=1.8/Math.max(...new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3()).toArray());m.scale.setScalar(s);GUN.clear();GUN.add(m)},undefined,()=>{})}const g=S.eq.gun>=0?ITEMS[S.eq.gun]:null,s=S.eq.skin>=0?ITEMS[S.eq.skin]:null,c=S.eq.char>=0?ITEMS[S.eq.char]:null;
+M.body.color.set(c?new THREE.Color().setHSL((c.id*.137)%1,.45,.32):0x2f3440);M.vest.color.set(s?RAR[s.r].c:0x3a4a3a);M.vest.emissive.set(s&&s.r==='L'?0x553300:0);
+M.gun.color.set(g?RAR[g.r].c:0x22252c);M.gun.emissive.set(g?new THREE.Color(RAR[g.r].c).multiplyScalar(.35):0)}
+function initGL(bgU,solU){if(typeof THREE==='undefined')return;try{
+R=new THREE.WebGLRenderer({canvas:document.getElementById('gl'),alpha:true,antialias:true});R.setPixelRatio(Math.min(devicePixelRatio,2));
+SC=new THREE.Scene();SC.fog=new THREE.Fog(0x141c38,7,20);if(bgU)new THREE.TextureLoader().load(bgU,t=>{const g=new THREE.SphereGeometry(40,48,32);g.scale(-1,1,1);BGM=new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:t,fog:false,color:0x7f8fc0}));SC.add(BGM)});CAM=new THREE.PerspectiveCamera(32,1,.1,50);CAM.position.set(0,1.5,8);CAM.lookAt(0,1.35,0);
+SC.add(new THREE.HemisphereLight(0x9bb0ff,0x251038,1));const d=new THREE.DirectionalLight(0xffffff,.9);d.position.set(3,4,5);SC.add(d);const r=new THREE.DirectionalLight(0xa050ff,1.3);r.position.set(-4,2,-3);SC.add(r);
+SOL=new THREE.Group();SC.add(SOL);PR=new THREE.Group();SOL.add(PR);M={body:mat(0x2f3440),vest:mat(0x3a4a3a),mask:mat(0xd8d8d8),dark:mat(0x15151c),gun:mat(0x22252c)};
+const pl=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.7,.2,6),mat(0x1d2748));pl.position.y=-.1;SOL.add(pl);const ring=new THREE.Mesh(new THREE.TorusGeometry(1.5,.035,6,6),new THREE.MeshBasicMaterial({color:0xf5d300}));RG=ring;ring.rotation.x=Math.PI/2;ring.position.y=.02;SOL.add(ring);
+[-.25,.25].forEach(x=>{bx(.4,1.1,.45,x,.65,0,M.body);bx(.42,.25,.62,x,.14,.08,M.dark)});
+bx(1,1,.55,0,1.7,0,M.body);bx(1.1,.8,.66,0,1.75,0,M.vest);bx(.28,.26,.16,-.3,1.5,.4,M.dark);bx(.28,.26,.16,.3,1.5,.4,M.dark);bx(.3,.25,.16,0,1.55,.42,M.dark);
+bx(.5,.55,.5,0,2.55,0,M.mask);bx(.13,.1,.02,-.12,2.6,.26,M.dark);bx(.13,.1,.02,.12,2.6,.26,M.dark);bx(.32,.07,.02,0,2.42,.26,M.dark);bx(.1,.12,.02,0,2.5,.26,M.dark);
+const h=new THREE.Mesh(new THREE.SphereGeometry(.38,12,8,0,6.28,0,1.5),mat(0x4a5a48));h.position.y=2.6;PR.add(h);bx(.08,.3,.14,-.3,2.55,0,M.dark);bx(.08,.3,.14,.3,2.55,0,M.dark);bx(.55,.12,.1,0,2.67,.25,mat(0x6aa8d8));
+const a1=bx(.3,.85,.3,.78,1.85,.1,M.body);a1.rotation.z=-.25;const a2=bx(.3,.85,.3,-.72,1.75,.3,M.body);a2.rotation.x=-.9;
+GUN=new THREE.Group();PR.add(GUN);bx(1.7,.2,.22,0,0,0,M.gun,GUN);bx(.5,.18,.18,-1,-.05,0,M.gun,GUN);bx(.18,.5,.16,-.1,-.32,0,M.dark,GUN);bx(.35,.1,.1,.1,.17,0,M.dark,GUN);
+const bl=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.8,8),M.dark);bl.rotation.z=Math.PI/2;bl.position.x=1.2;GUN.add(bl);GUN.position.set(-.1,1.65,.75);GUN.rotation.set(0,-.8,.45);
+const rm=new THREE.MeshStandardMaterial({color:0x2a3566,flatShading:true,roughness:1});
+for(let i=0;i<9;i++){const k=new THREE.Mesh(new THREE.IcosahedronGeometry(.5+Math.random()*1.3,0),rm);k.position.set(-9+Math.random()*18,-1+Math.random()*5,-3-Math.random()*8);SC.add(k);rocks.push(k)}
+const pt=new Float32Array(300);for(let i=0;i<300;i++)pt[i]=(Math.random()-.5)*(i%3==1?8:20);const pg2=new THREE.BufferGeometry();pg2.setAttribute('position',new THREE.BufferAttribute(pt,3));const ps=new THREE.Points(pg2,new THREE.PointsMaterial({color:0xbcd0ff,size:.05}));ps.position.z=-2;SC.add(ps);
+if(solU&&THREE.GLTFLoader)new THREE.GLTFLoader().load(solU,g=>{const m=g.scene,b=new THREE.Box3().setFromObject(m),sz=b.getSize(new THREE.Vector3()),s=2.9/sz.y,c=b.getCenter(new THREE.Vector3());m.scale.setScalar(s);m.position.set(-c.x*s,-b.min.y*s,-c.z*s);m.traverse(o=>{if(o.isMesh)o.frustumCulled=false});SOL.add(m);SOLM=m;PR.visible=false;GL3=1;PR.remove(GUN);SOL.add(GUN);GUN.position.set(1.9,1.6,0);GUN.rotation.set(0,0,0);MIX=new THREE.AnimationMixer(m);const cl=THREE.AnimationClip.findByName(g.animations,'Idle')||g.animations[0];if(cl)MIX.clipAction(cl).play();look()},undefined,e=>console.warn('soldier model failed',e));
+look();const cv=document.getElementById('gl');let lx=null;
+addEventListener('pointerdown',e=>{if(e.target.closest('button,input,.pg>.pb:not(.x)'))return;lx=e.clientX});addEventListener('pointermove',e=>{if(lx!==null){drag+=(e.clientX-lx)*.012;lx=e.clientX}});addEventListener('pointerup',()=>lx=null);
+function rs(){R.setSize(innerWidth,innerHeight);CAM.aspect=innerWidth/innerHeight;CAM.updateProjectionMatrix()}rs();addEventListener('resize',rs);
+const ck=new THREE.Clock();(function an(t){requestAnimationFrame(an);t*=.001;const dt=ck.getDelta();if(MIX)MIX.update(dt);if(BGM)BGM.rotation.y=t*.012;if(GL3){GUN.visible=pg==='loadout';GUN.rotation.y+=.012}CAM.position.x=Math.sin(t*.2)*.35;CAM.lookAt(0,1.35,0);SOL.position.y=Math.sin(t*1.6)*.03;SOL.position.x+=(tx-SOL.position.x)*.08;drag*=.985;SOL.rotation.y=-.3+Math.sin(t*.4)*.12+drag;if(!GL3)GUN.rotation.z=.45+Math.sin(t*1.6)*.02;rocks.forEach((k,i)=>{k.rotation.x=t*.1*(i%3+1);k.rotation.y=t*.08;k.position.y+=Math.sin(t+i)*.0015});ps.rotation.y=t*.02;R.render(SC,CAM)})(0)}catch(e){console.warn('3D unavailable',e)}}
+const BGS=['assets/bg.jpg','https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/2294472375_24a3b8ef46_o.jpg'],SOLS=['assets/soldier.glb','https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb','https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb'];
+const TIPS=['Every 3 missions = 1 game token','Boss missions give 2 extra keys','Your streak adds bonus coins every day','Epic or better is guaranteed every 10 draws','Level rewards wait in your Profile'],wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function grab(urls){for(const u of urls){try{let r=window.caches?await caches.match(u):null;if(!r){r=await fetch(u);if(!r.ok)continue;if(window.caches)try{(await caches.open('lul1')).put(u,r.clone())}catch(e){}}const b=await r.blob();return{u:URL.createObjectURL(b),mb:b.size/1048576}}catch(e){}}return null}
+function loginScr(){inLogin=1;ui.innerHTML='<div class="scr"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="s" style="margin:.3rem 0 1.1rem">Season 1 · Finish missions. Open crates. Rank up.</div><div style="width:min(320px,70vw)"><input id="ln" maxlength="16" placeholder="Enter your callsign" value="'+(S.name!=='Player'?esc(S.name):'')+'"><button class="sm" style="width:100%;margin-top:8px;padding:.7rem" onclick="gLogin()">SIGN IN WITH GOOGLE (sync phones)</button><button class="sm alt" style="width:100%;margin-top:6px;padding:.6rem" onclick="doLogin()">PLAY AS GUEST (this phone only)</button><button class="sm alt" style="width:100%;margin-top:6px" onclick="impLogin()">LOAD BACKUP</button></div><div class="s" style="position:absolute;bottom:.6rem">Progress is saved on this device</div></div>'}
+function doLogin(){const v=document.getElementById('ln').value.trim();if(!v)return toast('Enter a callsign');S.name=v.slice(0,16);S.reg=1;save();loading()}
+function impLogin(){const t=prompt('Paste your backup text');if(!t)return;try{const o=JSON.parse(t);if(!o.quests)throw 0;S=Object.assign(fresh(),o,{reg:1});save();loading()}catch(e){toast('Invalid backup')}}
+async function loading(){busy=1;inLogin=0;ui.innerHTML='<div class="scr" id="sc"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="lbar"><div class="s" id="lt"></div><div class="bar" style="width:100%;height:.6rem"><i id="lb" style="width:0"></i></div><div class="s" id="tp" style="margin-top:6px"></div></div></div>';
+const sc=document.getElementById('sc'),lb=document.getElementById('lb'),lt=document.getElementById('lt');document.getElementById('tp').textContent='TIP: '+pick(TIPS);
+const tot=ITEMS.length+4;let n=0,mb=0;const st=t=>{n++;lb.style.width=Math.round(n/tot*100)+'%';lt.textContent=t+' · '+mb.toFixed(1)+' MB downloaded'};
+lt.textContent='Connecting to server...';await wait(300);await syncClock();
+const bg=await grab(BGS);if(bg){mb+=bg.mb;sc.style.backgroundImage='url('+bg.u+')'}st('Downloading environment');
+const sd=await grab(SOLS);if(sd)mb+=sd.mb;st('Downloading 3D models');
+await Promise.all(ITEMS.map(it=>new Promise(r=>{const i=new Image();i.onload=i.onerror=()=>{st('Downloading icons');r()};i.src=iconUrl(it)})));
+const wu=await wallpaper();if(wu)document.getElementById('wp').style.backgroundImage='url("'+wu+'")';st('Fetching daily wallpaper');st('Starting engine');initGL(wu?null:bg&&bg.u,sd&&sd.u);await wait(600);busy=0;pg='';render()}
+load();cloudInit();if(S.reg)loading();else loginScr();
+setInterval(()=>{const n=now(),c=document.getElementById('clk');if(c){const e=new Date(n);e.setHours(24,0,0,0);const s=Math.max(0,Math.floor((e-n)/1000));c.textContent='🕒 '+n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' · DAILY RESET IN '+[Math.floor(s/3600),Math.floor(s%3600/60),s%60].map(x=>String(x).padStart(2,'0')).join(':')}if(!lastDay)lastDay=today();else if(today()!==lastDay){lastDay=today();render()}},1000);
+function tod(){const h=now().getHours(),e=document.getElementById('tod');if(e)e.style.opacity=h>=19||h<5?.45:h>=17||h<7?.18:0}tod();setInterval(tod,60000);
+setInterval(()=>{ci++;const t=document.getElementById('tk');if(t)t.textContent=CHAT[ci%CHAT.length]},4000);
+</script></body></html>
