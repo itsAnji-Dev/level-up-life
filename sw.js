@@ -1,5 +1,5 @@
-/* Level Up Life Ops - Offline Service Worker v4 */
-const CACHE = 'lul-pwa-v4';
+/* Level Up Life Ops - Offline Service Worker v5 */
+const CACHE = 'lul-pwa-v5';
 const SOUNDS = [
   'https://actions.google.com/sounds/v1/weapons/rifle_fire_select.ogg',
   'https://actions.google.com/sounds/v1/tools/ejecting_a_cassette.ogg',
@@ -10,10 +10,10 @@ const SOUNDS = [
   'https://actions.google.com/sounds/v1/weapons/cocking_a_50cal_gun.ogg',
   'https://actions.google.com/sounds/v1/weapons/gun_reload.ogg',
   'https://actions.google.com/sounds/v1/weapons/gun_powder_ignite.ogg',
+  'https://actions.google.com/sounds/v1/weapons/explosion_large.ogg',
   'https://actions.google.com/sounds/v1/science_fiction/suspense_builder.ogg',
   'https://actions.google.com/sounds/v1/science_fiction/sci_fi_vortex.ogg',
-  'https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg',
-  'https://actions.google.com/sounds/v1/alarms/medium_bell_ringing_near.ogg'
+  'https://actions.google.com/sounds/v1/crowd/applause.ogg'
 ];
 const CORE = [
   './',
