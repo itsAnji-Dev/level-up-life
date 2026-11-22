@@ -1,5 +1,20 @@
 /* Level Up Life Ops - Offline Service Worker */
-const CACHE = 'lul-pwa-v2';
+const CACHE = 'lul-pwa-v3';
+const SOUNDS = [
+  'https://actions.google.com/sounds/v1/weapons/rifle_fire_select.ogg',
+  'https://actions.google.com/sounds/v1/tools/ejecting_a_cassette.ogg',
+  'https://actions.google.com/sounds/v1/weapons/shell_casings_revolver.ogg',
+  'https://actions.google.com/sounds/v1/weapons/gun_parts_handling.ogg',
+  'https://actions.google.com/sounds/v1/weapons/rifle_charging_handle.ogg',
+  'https://actions.google.com/sounds/v1/weapons/shot_gun_handling.ogg',
+  'https://actions.google.com/sounds/v1/weapons/cocking_a_50cal_gun.ogg',
+  'https://actions.google.com/sounds/v1/weapons/gun_reload.ogg',
+  'https://actions.google.com/sounds/v1/weapons/gun_powder_ignite.ogg',
+  'https://actions.google.com/sounds/v1/science_fiction/suspense_builder.ogg',
+  'https://actions.google.com/sounds/v1/science_fiction/sci_fi_vortex.ogg',
+  'https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg',
+  'https://actions.google.com/sounds/v1/alarms/medium_bell_ringing_near.ogg'
+];
 const CORE = [
   './',
   './index.html',
@@ -12,7 +27,10 @@ const CORE = [
 
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())
+    caches.open(CACHE).then(async c => {
+      await c.addAll(CORE);
+      await Promise.allSettled(SOUNDS.map(u => c.add(u)));
+    }).then(() => self.skipWaiting())
   );
 });
 
@@ -27,10 +45,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const u = e.request.url;
   if (e.request.method !== 'GET') return;
-  /* Never cache Firebase Auth/Firestore or live time APIs */
   if (u.includes('googleapis.com') || u.includes('firebase') || u.includes('worldtimeapi')) return;
 
-  /* Network-first for HTML so GitHub updates arrive immediately, fallback to cache offline */
   if (e.request.mode === 'navigate' || u.endsWith('index.html')) {
     e.respondWith(
       fetch(e.request).then(r => {
@@ -42,7 +58,6 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  /* Cache-first for scripts, icons, and 3D assets */
   e.respondWith(
     caches.match(e.request).then(hit => hit || fetch(e.request).then(r => {
       if (r && r.ok) {
