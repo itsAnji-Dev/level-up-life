@@ -38,13 +38,14 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--y)}
 .mode{position:relative;height:2.65rem;text-align:left;padding:0 .7rem;font-weight:700;font-size:.82rem;background:linear-gradient(90deg,#0b1020,#2a3a70);border:1px solid #fff3;clip-path:var(--cut)}.mode small{display:block;font-size:.6rem;color:var(--y);font-weight:400}
 
 /* TOP-LEFT SQUAD & VOICE HUD (HOME SCREEN + 3D WORLD) */
-.team-hud{position:fixed;top:4.15rem;left:8px;width:clamp(155px,22vw,220px);background:#070d1ee0;border:1px solid #f5d30066;clip-path:var(--cut);padding:5px;z-index:25;pointer-events:auto}
-.arena-team{top:46px;left:12px;width:clamp(160px,22vw,225px);z-index:84}
+.team-hud{position:fixed;top:4.15rem;left:8px;width:clamp(165px,23vw,230px);background:#070d1ee0;border:1px solid #f5d30066;clip-path:var(--cut);padding:5px;z-index:25;pointer-events:auto}
+.arena-team{top:46px;left:12px;width:clamp(170px,23vw,235px);z-index:84}
 .th-hdr{display:flex;align-items:center;justify-content:space-between;gap:4px;background:linear-gradient(90deg,#1d2d5c,#101936);border-bottom:1px solid #f5d30055;padding:3px 5px;margin-bottom:4px;font-size:.66rem;font-weight:900;color:var(--y)}
-.th-vbtns{display:flex;gap:3px}
+.th-vbtns{display:flex;gap:3px;align-items:center}
 .vbtn{width:1.55rem;height:1.45rem;border-radius:4px;background:#1e293b;border:1px solid #ffffff33;font-size:.72rem;display:grid;place-items:center;padding:0}
 .vbtn.on{background:#15803d;border-color:#4ade80;color:#fff}
 .vbtn.mute{background:#7f1d1d;border-color:#f87171;color:#fecaca}
+.th-exit{background:#991b1b;border:1px solid #f87171;color:#fff;font-size:.58rem;font-weight:900;padding:2px 6px;border-radius:4px;white-space:nowrap}
 .tm-row{display:flex;align-items:center;gap:5px;background:#ffffff10;padding:3px 5px;margin-bottom:3px;border-left:2px solid #5be58a;font-size:.65rem}
 .tm-row.wait{border-left-color:#f59e0b}
 .tm-row.empty{border-left-color:#ffffff33;cursor:pointer;padding:4px 5px}.tm-row.empty:hover{background:#ffffff22}
@@ -124,6 +125,7 @@ input[type=range]{padding:0;accent-color:var(--y);height:1.4rem;background:trans
 .hpbar{background:#000a;padding:4px 10px;border-left:3px solid #5be58a;font-size:.76rem}.hpbar div{width:8.5rem;height:.42rem;background:#fff2;margin-top:2px}.hpbar i{display:block;height:100%;background:#5be58a;transition:width .2s}
 .aright{display:flex;gap:7px;align-items:center}
 .abtn-top{width:2.6rem;height:2.6rem;border-radius:50%;background:#000b;border:2px solid #fff6;font-size:1.05rem;display:grid;place-items:center}
+.abtn-exit{height:2.4rem;padding:0 12px;border-radius:2rem;background:#991b1bee;border:2px solid #f87171;color:#fff;font-size:.76rem;font-weight:900;display:flex;align-items:center;gap:4px}
 .xhair{position:fixed;left:50%;top:48%;transform:translate(-50%,-50%);width:22px;height:22px;border:2px solid #ff2a55cc;border-radius:50%;pointer-events:none;transition:all .15s}
 .xhair:after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;background:#f5d300;border-radius:50%;transform:translate(-50%,-50%)}
 .scope-ov{position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 48%,transparent 21%,rgba(4,8,18,.88) 23%);display:none}
@@ -852,13 +854,17 @@ function refreshHudEd(){
 
 /* ===== TEAM HUD RENDERER (USED IN BOTH HOME SCREEN & 3D BATTLE ARENA) ===== */
 function renderTeamHudHtml(inArena=false){
-  const sq=squadMembers();
-  const canInv=sq.length<5&&(!SQUAD||SQUAD.leaderPid===S.id);
+  const sq=squadMembers(inArena);
+  const canInv=!inArena&&sq.length<5&&(!SQUAD||SQUAD.leaderPid===S.id);
   const f0=S.friends.find(f=>!sq.some(m=>m.pid===f.i));
+  const exitBtn=inArena
+    ?'<button class="th-exit" title="Exit 3D Match" onclick="confirmExitMatch()">🚪 EXIT</button>'
+    :(SQUAD?'<button class="th-exit" title="Exit Squad Lobby" onclick="leaveSquad()">🚪 EXIT TEAM</button>':'');
   return '<div class="team-hud'+(inArena?' arena-team':'')+'" id="'+(inArena?'arena-team':'home-team')+'">'+
     '<div class="th-hdr"><span>👥 SQUAD ('+sq.length+'/5)</span><div class="th-vbtns">'+
     '<button class="vbtn '+(MIC_ON?'on':'mute')+'" title="Toggle My Mic" onclick="VOICE.toggleMic()">'+(MIC_ON?'🎤':'🔇')+'</button>'+
     '<button class="vbtn '+(SPK_ON?'on':'mute')+'" title="Toggle Team Speaker" onclick="VOICE.toggleSpeaker()">'+(SPK_ON?'🔊':'🔈')+'</button>'+
+    exitBtn+
     '</div></div>'+
     sq.map(m=>{
       const pMuted=!!MUTED_PEERS[m.pid]||!SPK_ON;
@@ -871,12 +877,12 @@ function renderTeamHudHtml(inArena=false){
         (!m.me?'<button class="vbtn '+(pMuted?'mute':'on')+'" style="width:1.3rem;height:1.25rem;font-size:.62rem" title="Mute/Unmute Teammate Audio" onclick="VOICE.toggleSpeaker(\''+esc(m.pid)+'\')">'+(pMuted?'🔈':'🔊')+'</button>':'')+
       '</div>';
     }).join('')+
-    (!inArena&&canInv?(f0?'<div class="tm-row empty" onclick="inviteFriendToPlay(\''+esc(f0.i)+'\',\''+esc(f0.n).replace(/'/g,'')+'\')"><b>➕ INVITE '+esc(f0.n)+'</b></div>'
+    (canInv?(f0?'<div class="tm-row empty" onclick="inviteFriendToPlay(\''+esc(f0.i)+'\',\''+esc(f0.n).replace(/'/g,'')+'\')"><b>➕ INVITE '+esc(f0.n)+'</b></div>'
     :'<div class="tm-row empty" onclick="go(\'clan\',\'Friends\')"><b>➕ ADD / INVITE (MAX 5)</b></div>'):'')+
   '</div>';
 }
 
-/* ===== HIGH-DETAIL PLAYABLE 3D BATTLE ARENA (UP TO 5-PLAYER CO-OP, VOICE HUD, SCOPE & ROADS) ===== */
+/* ===== HIGH-DETAIL PLAYABLE 3D BATTLE ARENA (UP TO 5-PLAYER CO-OP, REAL-TIME EXIT REMOVAL) ===== */
 let AR=null;
 function startMatch(squadId=null){
   if(typeof THREE==='undefined')return toast('3D Engine unavailable on this browser.');
@@ -886,7 +892,7 @@ function startMatch(squadId=null){
   const wrap=document.createElement('div');wrap.id='arena';
   wrap.innerHTML='<canvas id="acv"></canvas><div class="scope-ov" id="scope-ov"></div><div class="ahud">'+
     '<div class="atop"><div style="display:flex;gap:10px;align-items:center"><div class="ammo">🔫 <span id="am-cnt">30</span>/30 <small id="am-gun" style="font-size:.62rem;color:var(--y)"></small></div><div class="hpbar">HP <span id="hp-txt">100</span> · KILLS <span id="kl-txt">0/6</span><div><i id="hp-bar" style="width:100%"></i></div></div></div>'+
-    '<div class="aright"><button class="abtn-top" title="In-Match Settings & Custom HUD" onclick="AR.openSettings()">⚙️</button><button class="abtn-top" title="Exit Match" onclick="confirmExitMatch()">🚪</button></div></div>'+
+    '<div class="aright"><button class="abtn-top" title="In-Match Settings & Custom HUD" onclick="AR.openSettings()">⚙️</button><button class="abtn-exit" title="Exit 3D Match" onclick="confirmExitMatch()">🚪 EXIT</button></div></div>'+
     '<div id="arena-team-slot">'+renderTeamHudHtml(true)+'</div>'+
     '<div class="xhair" id="xhair"></div><div class="mfeed" id="mfeed">DEPLOYED TO '+esc(mapObj.name)+' · RIGHT-CLICK OR 🎯 TO SCOPE</div>'+
     '<div class="hctrl" id="hc-minimap"><canvas id="radar" width="80" height="80"></canvas></div>'+
@@ -987,7 +993,7 @@ function startMatch(squadId=null){
   let fpGun=build3DGun(ownedGuns[gunIdx].id);fpGun.scale.setScalar(.85);fpGun.position.set(.26,-.25,-.52);fpGun.visible=false;cam.add(fpGun);sc.add(cam);
 
   /* Up to 4 Live Co-Op Squadmates in 3D Arena with Floating Nameplates */
-  const mateAvs={},matePositions={};
+  const mateAvs={},matePositions={},mateNames={};
   sq.filter(m=>!m.me).forEach((m,idx)=>{
     const av=makeSoldierAvatar({armorCol:0x38bdf8,gunId:m.eq&&m.eq.gun>=0?m.eq.gun:7,tint:0x38bdf8,label:m.name,isLeader:m.isLeader});
     const off=spawnOffsets[idx+1]||[2,11];
@@ -995,6 +1001,7 @@ function startMatch(squadId=null){
     sc.add(av.grp);
     mateAvs[m.pid]=av;
     matePositions[m.pid]={x:off[0],z:off[1],yaw:0};
+    mateNames[m.pid]=m.name;
   });
 
   /* 6 Full 3D Soldier Enemy Bots Holding Different 3D Weapons */
@@ -1086,7 +1093,22 @@ function startMatch(squadId=null){
       const slot=document.getElementById('arena-team-slot');
       if(slot)slot.innerHTML=renderTeamHudHtml(true);
     },
-    setMatePos(pid,pos){matePositions[pid]=pos},
+    setMatePos(pid,pos){if(mateAvs[pid])matePositions[pid]=pos},
+    syncMates(activeDocs){
+      let changed=false;
+      Object.keys(mateAvs).forEach(pid=>{
+        const doc=activeDocs[pid];
+        /* Remove teammate from 3D world immediately if they left the squad OR exited back to lobby */
+        if(!doc||doc.squadStatus!=='started'){
+          sc.remove(mateAvs[pid].grp);
+          delete mateAvs[pid];
+          delete matePositions[pid];
+          setFeed((mateNames[pid]||'TEAMMATE')+' EXITED THE 3D WORLD');
+          changed=true;
+        }
+      });
+      if(changed)AR.renderTeamHud();
+    },
     applyHud(){
       HUD_META.forEach(([k])=>{
         const el=document.getElementById('hc-'+k),c=S.cfg.hud[k];
@@ -1206,7 +1228,7 @@ function startMatch(squadId=null){
     /* Sync Co-Op Squad Position via own players/{uid} document */
     if(squadId&&DB&&USER&&t-lastSync>.3){
       lastSync=t;
-      pushMyPlayerDoc({pos:{x:+player.position.x.toFixed(2),z:+player.position.z.toFixed(2),yaw:+player.rotation.y.toFixed(2),kills:st.kills}});
+      pushMyPlayerDoc({squadStatus:'started',pos:{x:+player.position.x.toFixed(2),z:+player.position.z.toFixed(2),yaw:+player.rotation.y.toFixed(2),kills:st.kills}});
     }
     Object.keys(mateAvs).forEach(pid=>{
       const av=mateAvs[pid],mp=matePositions[pid];
@@ -1277,7 +1299,12 @@ function exitMatch(claim=true,victory=false){
   if(kTxt)earnedKills=parseInt(kTxt.textContent)||0;
   if(AR){AR.cleanup();AR=null}
   if(el)el.remove();
-  if(SQUAD){SQUAD.status='lobby';MY_READY=false;pushMyPlayerDoc()}
+  if(SQUAD){
+    SQUAD.status='lobby';
+    MY_READY=false;
+    pushMyPlayerDoc({squadStatus:'lobby',squadReady:false,pos:null});
+  }
+  render();
   if(!claim)return;
 
   const won=victory||earnedKills>=6;
@@ -1327,7 +1354,7 @@ function listenSquad(){
     sn.forEach(d=>{
       const x=d.data();
       next[x.pid]=x;
-      if(AR&&x.pid!==S.id&&x.pos)AR.setMatePos(x.pid,x.pos);
+      if(AR&&x.pid!==S.id&&x.pos&&x.squadStatus==='started')AR.setMatePos(x.pid,x.pos);
     });
     SQUAD_DOCS=next;
     /* Check if Leader changed map or launched the 3D Battle Arena */
@@ -1341,8 +1368,12 @@ function listenSquad(){
       }
     }
     updateLobbySquad();
-    if(AR)AR.renderTeamHud();
-    else render();
+    if(AR){
+      AR.syncMates(next);
+      AR.renderTeamHud();
+    }else{
+      render();
+    }
   },err=>console.warn('Squad listener:',err));
 }
 
@@ -1493,9 +1524,9 @@ async function leaveSquad(){
   SQUAD=null;MY_READY=false;SQUAD_DOCS={};
   if(unsubSquad){unsubSquad();unsubSquad=null}
   VOICE.closeAll();
-  await pushMyPlayerDoc();
+  await pushMyPlayerDoc({squadId:'',squadLeaderPid:'',squadStatus:'',squadMatchId:'',squadReady:false,pos:null});
   updateLobbySquad();render();
-  toast('Left Squad');
+  toast('Exited Team Lobby');
 }
 
 async function launchSquadMatch(){
@@ -1510,7 +1541,7 @@ async function launchSquadMatch(){
     SQUAD.status='started';
     SQUAD.matchId='M_'+Date.now();
     LAST_MATCH_ID=SQUAD.matchId;
-    await pushMyPlayerDoc();
+    await pushMyPlayerDoc({squadStatus:'started',squadMatchId:SQUAD.matchId});
   }
   startMatch(SQUAD?SQUAD.id:null);
 }
@@ -1537,13 +1568,14 @@ const tabsH=(a,badges={})=>'<div class="tabs">'+a.map(t=>'<button class="'+(tb==
 const page=(title,body,half)=>'<div class="pg'+(half?' half':'')+'"><div class="ph"><button class="bk" aria-label="Back" onclick="go(\'\')">◀</button><h1>'+title+'</h1>'+cur()+'</div><div class="pb">'+body+'</div></div>';
 const activeMap=()=>MAPS.find(m=>m.id===S.map)||MAPS[0];
 
-function squadMembers(){
+function squadMembers(onlyInMatch=false){
   const leaderPid=SQUAD?SQUAD.leaderPid:S.id;
   const me={pid:S.id,name:S.name,lvl:S.lvl,avatar:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖',eq:S.eq,ready:leaderPid===S.id?true:MY_READY,isLeader:leaderPid===S.id,micOn:MIC_ON,spkOn:SPK_ON,me:1};
   const list=[me];
   if(SQUAD){
     Object.values(SQUAD_DOCS).forEach(d=>{
       if(d.pid===S.id||list.length>=5)return;
+      if(onlyInMatch&&d.squadStatus!=='started')return;
       list.push({
         pid:d.pid,name:d.n||'Player',lvl:d.l||1,avatar:d.a||'🪖',
         eq:d.eq||{gun:3,skin:-1,char:-1},
@@ -1561,7 +1593,7 @@ function squadMembers(){
 function home(){
   const d=S.quests.filter(q=>q.d!=='Boss'),dn=d.filter(q=>q.done===today()).length,n=nToday(),m=ms(),cl=MS.findIndex((x,i)=>n>=x[0]&&!m.c.includes(i));
   const achReady=ACHS.some(a=>!S.ach.includes(a.id)&&a.cur(S)>=a.max);
-  const sq=squadMembers();
+  const sq=squadMembers(false);
   const isLeader=!SQUAD||SQUAD.leaderPid===S.id;
   const teammates=sq.filter(x=>!x.me);
   const readyCount=teammates.filter(x=>x.ready).length;
@@ -1687,11 +1719,11 @@ function pClan(){
     c='<h2>Incoming Friend Requests, Gifts & Home Lobby Invites</h2>'+
     (INBOX.length?INBOX.map(inv=>'<div class="fr L"><span style="font-size:1.8rem">'+(inv.fromAvatar||'📩')+'</span><div style="flex:1"><b>'+esc(inv.fromName)+'</b> <span class="s">('+esc(inv.fromPid)+')</span><div class="s">'+(inv.type==='friend_req'?'Sent you a Friend Request':inv.type==='gift'?'Sent Gift: '+esc(inv.payload?.label||''):'Invited you to their 5-Player Home Lobby Squad ('+esc(inv.payload?.mapName||'Firing Range')+')')+'</div></div><button class="sm" onclick="acceptInvite(\''+inv.id+'\')">'+(inv.type==='gift'?'CLAIM':inv.type==='match_invite'?'JOIN LOBBY':'ACCEPT')+'</button><button class="sm alt" onclick="declineInvite(\''+inv.id+'\')">DECLINE</button></div>').join(''):'<p class="s" style="margin-top:10px">No pending invitations. Share your Player ID (<b>'+S.id+'</b>) with your friends or enter theirs in the Friends tab!</p>');
   }else if(tb==='Squad Lobby'){
-    const sq=squadMembers();
+    const sq=squadMembers(false);
     const isLeader=!SQUAD||SQUAD.leaderPid===S.id;
     c='<h2>5-Player Home Lobby Squad ('+sq.length+'/5) · Map: '+esc(activeMap().name)+'</h2><p class="s" style="margin-bottom:8px">All teammates must tap READY before the Squad Leader (👑) can press START!</p>'+
     sq.map(m=>'<div class="fr R"><span style="font-size:1.8rem">'+esc(m.avatar||'🪖')+'</span><div style="flex:1"><b>'+(m.isLeader?'👑 ':'')+esc(m.name)+'</b> <span class="s">('+esc(m.pid)+') · LV '+m.lvl+'</span></div><span style="color:'+(m.ready||m.isLeader?'#5be58a':'#fbbf24')+';font-weight:700">'+(m.isLeader?'👑 LEADER':m.ready?'✔ READY':'⏳ NOT READY')+'</span></div>').join('')+
-    '<div class="row" style="margin-top:12px"><button class="sm" onclick="go(\'\')">VIEW 3D SQUAD IN HOME LOBBY</button>'+(isLeader?'<button class="sm" onclick="launchSquadMatch()">▶ START SQUAD MATCH</button>':'<button class="sm" onclick="toggleReady()">'+(MY_READY?'UNREADY':'✔ TAP READY')+'</button>')+(SQUAD?'<button class="sm danger" onclick="leaveSquad()">LEAVE SQUAD</button>':'')+'</div>';
+    '<div class="row" style="margin-top:12px"><button class="sm" onclick="go(\'\')">VIEW 3D SQUAD IN HOME LOBBY</button>'+(isLeader?'<button class="sm" onclick="launchSquadMatch()">▶ START SQUAD MATCH</button>':'<button class="sm" onclick="toggleReady()">'+(MY_READY?'UNREADY':'✔ TAP READY')+'</button>')+(SQUAD?'<button class="sm danger" onclick="leaveSquad()">🚪 EXIT TEAM</button>':'')+'</div>';
   }else if(tb==='Leaderboard'){
     c=all().map((f,i)=>'<div class="fr"><span style="font-size:1.8rem">'+esc(f.a)+'</span><b style="flex:1">#'+(i+1)+' '+esc(f.n)+(f.me?' (you)':'')+'</b><span class="s">Lv '+f.l+' · '+f.c+' items · 🔥'+f.s+'</span></div>').join('');
   }else if(tb==='Cloud'){
@@ -1738,7 +1770,7 @@ function pProfile(){
     tog('bgm','Tactical Lobby Ambience','Low-frequency command hum')+
     tog('vib','Phone Vibration / Haptics','Tactile feedback on taps, gunfire and crate openings')+
     '<h2 style="margin-top:10px">4. User Account & Cloud</h2>'+
-    '<div class="fr"><div style="flex:1"><b>Account Status</b><div class="s" style="text-transform:none">'+(USER?'Signed in: '+esc(USER.email||USER.displayName):'Guest Mode (Local Storage Only)')+' · '+cst+'</div></div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm danger" onclick="S.reg=0;S.googleLinked=0;lsave();AU.signOut();loginScr();toast(\'Signed out\')">LOGOUT</button>':'<button class="sm" onclick="gLogin()">GOOGLE LOGIN</button>')+'</div>'+
+    '<div class="fr"><div style="flex:1"><b>Account Status</b><div class="s" style="text-transform:none">'+(USER?'Signed in with Google: '+esc(USER.email||USER.displayName):'Guest Account (Local Device)')+' · '+cst+'</div></div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm danger" onclick="logoutAccount()">🚪 LOGOUT</button>':'<button class="sm" onclick="gLogin()">GOOGLE LOGIN</button><button class="sm danger" onclick="logoutAccount()">🚪 LOGOUT</button>')+'</div>'+
     '<div class="row"><input id="pn2" value="'+esc(S.name)+'" maxlength="16"><button class="sm" onclick="const v=document.getElementById(\'pn2\').value.trim();if(v){S.name=v.slice(0,16);save();render();toast(\'Callsign updated\')}">UPDATE CALLSIGN</button></div>';
   }else{
     const r=rk(S.lvl),nx=RANKS[r+1],lv=[];for(let n=2;n<=Math.max(12,S.lvl+5);n++){const[cc,k,cp]=lrew(n),got=S.lr.includes(n),can=S.lvl>=n;lv.push('<div class="lv'+(can?' ok':'')+'"><b>LV '+n+'</b><div>'+cc+' 🪙 · '+k+' 🗝️<br>+'+cp+' 💎 CP</div>'+(got?'<div class="s">CLAIMED</div>':can?'<button class="sm" onclick="claimLvl('+n+')">CLAIM</button>':'<div class="s">LOCKED</div>')+'</div>')}
@@ -1750,9 +1782,24 @@ function pProfile(){
   return page('Profile',tabsH(['Overview','Safe House','Achievements','Settings'])+'<div class="ct">'+c+'</div>');
 }
 
-/* ---------- CLOUD (Firebase Auth + Permanent One-Time Login + Firestore) ---------- */
-let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogin=0,lastDay='';
+/* ---------- CLOUD (Firebase Auth + Permanent One-Time Login + Mobile Redirect Fallback) ---------- */
+let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogin=0,lastDay='',gSigningIn=false;
 const TO=()=>({signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
+const isMobileDevice=()=>/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||isStandalone();
+
+async function handleSignedInUser(u){
+  USER=u;
+  S.reg=1;S.googleLinked=1;
+  if((!S.name||S.name==='Player')&&u.displayName)S.name=u.displayName.split(' ')[0].slice(0,16);
+  lsave();
+  cst='Signing in...';
+  if(inLogin){inLogin=0;loading()}
+  await cloudLoad();
+  listenMultiplayer();
+  upd();
+  if(!busy&&!inLogin)render();
+}
+
 function cloudInit(){
   if(!FB_CONFIG.apiKey||typeof firebase==='undefined')return;
   try{
@@ -1760,40 +1807,71 @@ function cloudInit(){
     AU=firebase.auth();
     DB=firebase.firestore();
     AU.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
-    AU.getRedirectResult().catch(e=>{if(e&&e.code)toast('Login failed: '+esc(e.code))});
+    AU.getRedirectResult().then(res=>{
+      gSigningIn=false;
+      if(res&&res.user)handleSignedInUser(res.user);
+    }).catch(e=>{
+      gSigningIn=false;
+      if(e&&e.code&&e.code!=='auth/no-auth-event')toast('Login failed: '+esc(e.code));
+    });
     AU.onAuthStateChanged(async u=>{
-      USER=u;
+      gSigningIn=false;
       if(u){
-        /* Mark registered immediately so user NEVER has to log in a second time */
-        S.reg=1;S.googleLinked=1;
-        if((!S.name||S.name==='Player')&&u.displayName)S.name=u.displayName.split(' ')[0].slice(0,16);
-        lsave();
-        cst='Signing in...';
-        if(inLogin){inLogin=0;loading()}
-        await cloudLoad();
-        listenMultiplayer();
+        await handleSignedInUser(u);
       }else{
+        USER=null;
         cst='Local only';
         if(unsub)unsub();
         if(unsubOutbox)unsubOutbox();
+        upd();
+        if(!busy&&!inLogin)render();
       }
-      upd();
-      if(!busy&&!inLogin)render();
     });
   }catch(e){cst='Cloud error';console.warn(e)}
 }
-function gLogin(){
+
+async function gLogin(){
   if(!AU)return toast('Cloud is not set up yet.');
+  if(gSigningIn)return;
+  gSigningIn=true;
   const lnEl=document.getElementById('ln');
   if(lnEl&&lnEl.value.trim()){S.name=lnEl.value.trim().slice(0,16);lsave()}
   const p=new firebase.auth.GoogleAuthProvider();
   p.setCustomParameters({prompt:'select_account'});
-  AU.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{}).then(()=>{
-    AU.signInWithPopup(p).catch(e=>{
-      if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')AU.signInWithRedirect(p);
-      else if(e.code!=='auth/popup-closed-by-user')toast('Login failed: '+esc(e.code||e.message));
-    });
-  });
+  try{
+    await AU.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    if(isMobileDevice()){
+      toast('Redirecting to Google Sign-In...');
+      await AU.signInWithRedirect(p);
+      return;
+    }
+    const res=await AU.signInWithPopup(p);
+    gSigningIn=false;
+    if(res&&res.user)await handleSignedInUser(res.user);
+  }catch(e){
+    gSigningIn=false;
+    const code=e&&e.code||'';
+    if(code==='auth/popup-blocked'||code==='auth/cancelled-popup-request'||code==='auth/operation-not-supported-in-this-environment'){
+      toast('Opening Google Sign-In redirect...');
+      AU.signInWithRedirect(p).catch(err=>toast('Login failed: '+esc(err.code||err.message)));
+    }else if(code!=='auth/popup-closed-by-user'){
+      toast('Login failed: '+esc(code||e.message));
+    }
+  }
+}
+
+async function logoutAccount(){
+  gSigningIn=false;
+  if(SQUAD)await leaveSquad();
+  S.reg=0;S.googleLinked=0;lsave();
+  if(unsub)unsub();
+  if(unsubOutbox)unsubOutbox();
+  if(AU&&USER){
+    try{await AU.signOut()}catch(e){}
+  }
+  USER=null;busy=0;pg='';
+  loginScr();
+  toast('Logged out! Returned to login screen.');
 }
 async function cloudLoad(){try{await syncClock();const d=await DB.collection('saves').doc(USER.uid).get();
 if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){const keptName=S.name&&S.name!=='Player'?S.name:c.name;S=Object.assign(fresh(),c,{reg:1,googleLinked:1});if(keptName)S.name=keptName;if(!S.createdAt)S.createdAt=Date.now();if(typeof S.cp!=='number')S.cp=150;if(typeof S.wins!=='number')S.wins=0;S.cfg=Object.assign(defCfg(),S.cfg||{});S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});lsave();look();toast('Cloud progress loaded ☁️')}else{S.reg=1;S.googleLinked=1;lsave();await cloudPush()}}
@@ -1828,7 +1906,7 @@ else{const d=now(),j=await(await fetch('https://en.wikipedia.org/api/rest_v1/fee
 if(u)try{localStorage.setItem(k,u)}catch(e){}return u}
 function cloudTab(){const o=(v,t)=>'<option value="'+v+'"'+(S.wp===v?' selected':'')+'>'+t+'</option>';
 const pwaRow=isStandalone()?'<div class="fr"><div style="flex:1"><b>Android App Mode</b><div class="s">Installed & offline-ready ✓</div></div></div>':'<div class="fr"><div style="flex:1"><b>Install App on Phone</b><div class="s">Full-screen landscape + offline play ($0)</div></div><button class="sm" onclick="installApp()">'+(PWA_PROMPT?'INSTALL NOW':'HOW TO INSTALL')+'</button></div>';
-return '<div class="fr"><div style="flex:1"><b>Cloud Save</b><div class="s" id="cs">'+cst+'</div>'+(USER?'<div class="s" style="text-transform:none">'+esc(USER.email||'')+'</div>':'')+'</div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm danger" onclick="S.reg=0;S.googleLinked=0;lsave();AU.signOut();loginScr()">LOGOUT</button>':'<button class="sm" onclick="gLogin()">SIGN IN WITH GOOGLE</button>')+'</div>'+pwaRow+
+return '<div class="fr"><div style="flex:1"><b>Cloud Save</b><div class="s" id="cs">'+cst+'</div>'+(USER?'<div class="s" style="text-transform:none">'+esc(USER.email||'')+'</div>':'<div class="s">Guest Account</div>')+'</div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm danger" onclick="logoutAccount()">🚪 LOGOUT</button>':'<button class="sm" onclick="gLogin()">GOOGLE LOGIN</button><button class="sm danger" onclick="logoutAccount()">🚪 LOGOUT</button>')+'</div>'+pwaRow+
 '<div class="fr"><div style="flex:1"><b>Daily Wallpaper</b><div class="s">New background every day</div></div><select onchange="S.wp=this.value;save();toast(\'Applying...\');setTimeout(()=>location.reload(),700)" style="width:auto">'+o('default','Classic photo')+o('nasa','NASA space photo')+o('wiki','Wikipedia photo of the day')+'</select></div>'}
 
 /* ---------- 3D LOBBY ENGINE (UP TO 5-PLAYER CODM SQUAD FORMATION) ---------- */
@@ -1839,7 +1917,7 @@ function applyGfx(){if(!R)return;const q=S.cfg.gfx||'High';const pr=q==='Low'?.7
 
 function updateLobbySquad(){
   if(!R||!SOL||!SOL_AVS.length)return;
-  const sq=squadMembers();
+  const sq=squadMembers(false);
   /* 5-Player CODM V-Formation on the Lobby Platform */
   const slots=sq.length===1
     ?[[0,0,0,0]]
