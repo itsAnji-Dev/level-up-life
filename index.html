@@ -80,8 +80,14 @@ input{font:inherit;background:#1f2a52;color:#fff;border:0;padding:.55rem;width:1
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-/* ===== CLOUD SETUP: paste your Firebase web-app config here (see setup steps). Leave empty = local-only mode. ===== */
-const FB_CONFIG={apiKey:"",authDomain:"",projectId:"",appId:""};
+/* ===== CLOUD SETUP: Firebase web-app config (level-up-life-ops) ===== */
+const FB_CONFIG={
+  apiKey:"AIzaSyCZAl_IdAe418ntfJO0kvgWATtjcXy81-8",
+  authDomain:"level-up-life-ops.firebaseapp.com",
+  projectId:"level-up-life-ops",
+  appId:"1:252491857005:web:547c174f5810fc148a1364"
+};
+
 const RAR={C:{n:'Common',w:60,dupe:5,price:40,c:0x9aa0b5},R:{n:'Rare',w:27,dupe:15,price:120,c:0x4aa8ff},E:{n:'Epic',w:10,dupe:40,price:300,c:0xb45cff},L:{n:'Legendary',w:3,dupe:120,price:800,c:0xffb020}};
 const ITEMS=[['Gun','🔫','Rusty Pistol','C'],['Gun','🔫','Street SMG','C'],['Gun','🔫','Pump Shotgun','C'],['Gun','🔫','Recruit Rifle','C'],['Gun','🏹','Hunter Bow','R'],['Gun','🔫','Neon M4','R'],['Gun','🔫','Frost Kilo','R'],['Gun','🔫','Inferno AK','E'],['Gun','🔫','Thunder Shotgun','E'],['Gun','🔫','Gold Dragon DL','L'],['Gun','🚀','Galaxy Launcher','L'],
 ['Skin','👕','Plain Hoodie','C'],['Skin','🧢','Streak Cap','C'],['Skin','🧤','Grip Gloves','C'],['Skin','🕶️','Shade Specs','R'],['Skin','🥋','Dojo Gi','R'],['Skin','🧥','Shadow Coat','E'],['Skin','🛡️','Knight Armor','E'],['Skin','👑','Royal Crown','L'],['Skin','🔥','Phoenix Cape','L'],
@@ -179,11 +185,12 @@ return page('Profile',tabsH(['Overview','Safe House'])+'<div class="ct">'+c+'</d
 let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogin=0,lastDay='';
 const TO=()=>({signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
 function cloudInit(){if(!FB_CONFIG.apiKey||typeof firebase==='undefined')return;try{firebase.initializeApp(FB_CONFIG);AU=firebase.auth();DB=firebase.firestore();
+AU.getRedirectResult().catch(e=>{if(e&&e.code)toast('Login failed: '+esc(e.code))});
 AU.onAuthStateChanged(async u=>{USER=u;if(u){cst='Signing in...';await cloudLoad()}else{cst='Local only';if(unsub)unsub()}upd();render()})}catch(e){cst='Cloud error';console.warn(e)}}
-function gLogin(){if(!AU)return toast('Cloud is not set up yet. Paste your Firebase config first.');const p=new firebase.auth.GoogleAuthProvider();AU.signInWithPopup(p).catch(e=>{if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')AU.signInWithRedirect(p);else if(e.code!=='auth/popup-closed-by-user')toast('Login failed: '+esc(e.code||e.message))})}
+function gLogin(){if(!AU)return toast('Cloud is not set up yet. Paste your Firebase config first.');const p=new firebase.auth.GoogleAuthProvider();p.setCustomParameters({prompt:'select_account'});AU.signInWithPopup(p).catch(e=>{if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')AU.signInWithRedirect(p);else if(e.code!=='auth/popup-closed-by-user')toast('Login failed: '+esc(e.code||e.message))})}
 async function cloudLoad(){try{await syncClock();const d=await DB.collection('saves').doc(USER.uid).get();
-if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){if((S.total||0)>0&&!confirm('Cloud save found: Level '+c.lvl+'. OK = use cloud progress. Cancel = keep THIS phone and overwrite the cloud.')){await cloudPush();cst='Synced ✓'}else{S=Object.assign(fresh(),c,{reg:1});lsave();look();toast('Cloud progress loaded ☁️')}}else await cloudPush()}
-else{if(!S.reg){S.name=(USER.displayName||'Player').split(' ')[0].slice(0,16);S.reg=1}await cloudPush()}
+if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){if((S.total||0)>0&&!confirm('Cloud save found: Level '+c.lvl+'. OK = use cloud progress. Cancel = keep THIS phone and overwrite the cloud.')){await cloudPush();cst='Synced ✓'}else{S=Object.assign(fresh(),c,{reg:1});lsave();look();toast('Cloud progress loaded ☁️')}}else{S.reg=1;lsave();await cloudPush()}}
+else{if(!S.reg){S.name=(USER.displayName||'Player').split(' ')[0].slice(0,16);S.reg=1}lsave();await cloudPush()}
 cst='Synced ✓';listenFriends();if(inLogin&&S.reg){inLogin=0;loading()}}catch(e){cst='Sync failed';console.warn(e);toast('Cloud error. Check Firestore rules.')}}
 async function cloudPush(){if(!DB||!USER)return;try{cst='Saving...';upd();const b=DB.batch(),T=firebase.firestore.FieldValue.serverTimestamp();
 b.set(DB.collection('saves').doc(USER.uid),{data:JSON.stringify(S),rev:S.rev||0,dev:navigator.userAgent.slice(0,90),t:T});
