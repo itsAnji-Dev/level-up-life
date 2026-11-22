@@ -1,5 +1,5 @@
-/* Level Up Life Ops - Offline Service Worker v5 */
-const CACHE = 'lul-pwa-v5';
+/* Level Up Life Ops - Offline Service Worker v5.1 */
+const CACHE = 'lul-pwa-v5.1';
 const SOUNDS = [
   'https://actions.google.com/sounds/v1/weapons/rifle_fire_select.ogg',
   'https://actions.google.com/sounds/v1/tools/ejecting_a_cassette.ogg',
@@ -22,13 +22,17 @@ const CORE = [
   './icon-192.svg',
   './icon-512.svg',
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
-  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js'
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js',
+  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb',
+  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Xbot.glb',
+  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/RobotExpressive/RobotExpressive.glb'
 ];
 
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(async c => {
-      await c.addAll(CORE);
+      await Promise.allSettled(CORE.map(u => c.add(u)));
       await Promise.allSettled(SOUNDS.map(u => c.add(u)));
     }).then(() => self.skipWaiting())
   );
