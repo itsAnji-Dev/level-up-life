@@ -20,7 +20,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--y)}
 .me{display:flex;gap:8px;background:#0008;padding:5px 12px 5px 5px;clip-path:var(--cut);border-left:3px solid var(--y)}
 .av{width:2.6rem;height:2.6rem;background:var(--pn2);display:grid;place-items:center;font-size:1.7rem}
 .me small{color:var(--mu);font-size:.7rem}.bar{height:.4rem;background:#fff2;margin-top:3px;width:9rem}.bar i{display:block;height:100%;background:var(--y);transition:width .5s}
-.cur{display:flex;gap:6px;align-items:center}.cur span{background:#0009;padding:4px 10px;border-radius:2rem;border:1px solid #f5d30055;font-size:.85rem}
+.cur{display:flex;gap:6px;align-items:center}.cur span,.cur button.cfg{background:#0009;padding:4px 10px;border-radius:2rem;border:1px solid #f5d30055;font-size:.85rem}
 .col{position:absolute;display:flex;flex-direction:column;gap:7px;width:clamp(120px,24vw,230px)}
 .L{left:8px;top:4rem}.Rr{right:8px;top:4rem}
 .ban{position:relative;text-align:left;padding:.55rem .7rem;min-height:2.9rem;background:linear-gradient(100deg,#5b3fd1aa,#1f2a52cc);border:1px solid #fff3;clip-path:var(--cut);font-size:.95rem;font-weight:700}
@@ -117,6 +117,51 @@ async function installApp(){
 }
 const isStandalone=()=>window.matchMedia('(display-mode: fullscreen)').matches||window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
 
+/* ===== OFFLINE TACTICAL SOUND ENGINE (Web Audio API, $0, zero external files) ===== */
+const SFX=(()=>{
+  let ctx=null,amb=null,ambG=null;
+  const ac=()=>{if(!ctx){const A=window.AudioContext||window.webkitAudioContext;if(A)ctx=new A()}if(ctx&&ctx.state==='suspended')ctx.resume();return ctx};
+  const cfg=()=>S&&S.cfg?S.cfg:{sfx:1,bgm:0,vib:1};
+  function vib(ms){try{if(cfg().vib&&navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
+  function tone(f1,f2,dur,type='triangle',vol=.14,delay=0){
+    if(!cfg().sfx)return;const c=ac();if(!c)return;
+    const t=c.currentTime+delay,o=c.createOscillator(),g=c.createGain();
+    o.type=type;o.frequency.setValueAtTime(f1,t);
+    if(f2&&f2!==f1)o.frequency.exponentialRampToValueAtTime(Math.max(20,f2),t+dur);
+    g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+.012);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+dur+.02);
+  }
+  function click(){vib(12);tone(760,320,.055,'triangle',.11)}
+  function back(){vib(10);tone(420,220,.07,'sine',.1)}
+  function coin(){vib(18);tone(987,1318,.08,'sine',.13);tone(1318,1568,.12,'sine',.11,.06)}
+  function quest(){vib([25,30,45]);[523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f,f*1.01,.18,'triangle',.14,i*.065))}
+  function lvlup(){vib([40,40,40,40,90]);[440,554.37,659.25,880,1108.73].forEach((f,i)=>tone(f,f,.32,'sawtooth',.11,i*.08))}
+  function shake(){vib([25,45,25,45,35,45,50]);for(let i=0;i<7;i++)tone(110+i*22,85,.08,'square',.08,i*.13)}
+  function loot(r){
+    if(r==='L'){vib([60,40,60,40,140]);[523,659,784,1046,1318,1568].forEach((f,i)=>tone(f,f*1.02,.42,'sawtooth',.13,i*.07))}
+    else if(r==='E'){vib([45,35,90]);[440,554,659,880,1108].forEach((f,i)=>tone(f,f,.32,'triangle',.14,i*.07))}
+    else if(r==='R'){vib([30,30,60]);[392,493.88,587.33,783.99].forEach((f,i)=>tone(f,f,.24,'triangle',.13,i*.07))}
+    else{vib(35);tone(330,440,.18,'triangle',.12);tone(440,523,.22,'triangle',.12,.09)}
+  }
+  function token(){vib([40,50,80]);tone(330,660,.25,'sawtooth',.12);tone(660,880,.3,'triangle',.12,.12)}
+  function setAmb(on){
+    if(!on){if(amb){try{amb.stop()}catch(e){}amb=null}return}
+    const c=ac();if(!c||amb)return;
+    const o1=c.createOscillator(),o2=c.createOscillator(),f=c.createBiquadFilter(),g=c.createGain();
+    o1.type='sawtooth';o1.frequency.value=55;o2.type='triangle';o2.frequency.value=82.41;
+    f.type='lowpass';f.frequency.value=160;g.gain.value=.035;
+    o1.connect(f);o2.connect(f);f.connect(g);g.connect(c.destination);
+    o1.start();o2.start();amb={stop(){o1.stop();o2.stop()}};ambG=g;
+  }
+  return{click,back,coin,quest,lvlup,shake,loot,token,setAmb,vib};
+})();
+document.addEventListener('pointerdown',e=>{
+  const b=e.target.closest('button,select');
+  if(!b)return;
+  if(b.classList.contains('bk'))SFX.back();
+  else SFX.click();
+},{passive:true});
+
 const RAR={C:{n:'Common',w:60,dupe:5,price:40,c:0x9aa0b5},R:{n:'Rare',w:27,dupe:15,price:120,c:0x4aa8ff},E:{n:'Epic',w:10,dupe:40,price:300,c:0xb45cff},L:{n:'Legendary',w:3,dupe:120,price:800,c:0xffb020}};
 const ITEMS=[['Gun','🔫','Rusty Pistol','C'],['Gun','🔫','Street SMG','C'],['Gun','🔫','Pump Shotgun','C'],['Gun','🔫','Recruit Rifle','C'],['Gun','🏹','Hunter Bow','R'],['Gun','🔫','Neon M4','R'],['Gun','🔫','Frost Kilo','R'],['Gun','🔫','Inferno AK','E'],['Gun','🔫','Thunder Shotgun','E'],['Gun','🔫','Gold Dragon DL','L'],['Gun','🚀','Galaxy Launcher','L'],
 ['Skin','👕','Plain Hoodie','C'],['Skin','🧢','Streak Cap','C'],['Skin','🧤','Grip Gloves','C'],['Skin','🕶️','Shade Specs','R'],['Skin','🥋','Dojo Gi','R'],['Skin','🧥','Shadow Coat','E'],['Skin','🛡️','Knight Armor','E'],['Skin','👑','Royal Crown','L'],['Skin','🔥','Phoenix Cape','L'],
@@ -131,14 +176,14 @@ const KEY='levelupLife.v1';let OFF=0;try{OFF=+localStorage.getItem('lul.off')||0
 const now=()=>new Date(Date.now()+OFF),today=()=>now().toLocaleDateString('en-CA'),yest=()=>{const d=now();d.setDate(d.getDate()-1);return d.toLocaleDateString('en-CA')};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S,pg='',tb='',ci=0;const ui=document.getElementById('ui');
-function fresh(){return{name:'Player',id:'ID'+Math.floor(1e7+Math.random()*9e7),lvl:1,xp:0,coins:50,keys:3,tokens:0,streak:0,last:'',pity:0,opens:0,owned:{},friends:[],tcount:{d:'',n:0},eq:{gun:-1,skin:-1,char:-1},ms:{d:'',c:[]},lr:[],reg:0,total:0,rev:0,wp:'default',
+function fresh(){return{name:'Player',id:'ID'+Math.floor(1e7+Math.random()*9e7),lvl:1,xp:0,coins:50,keys:3,tokens:0,streak:0,last:'',pity:0,opens:0,owned:{},friends:[],tcount:{d:'',n:0},eq:{gun:-1,skin:-1,char:-1},ms:{d:'',c:[]},lr:[],reg:0,total:0,rev:0,wp:'default',cfg:{sfx:1,bgm:0,vib:1},
 quests:[{id:1,n:'Wash clothes',d:'Easy',done:''},{id:2,n:'Study 1 focused hour',d:'Medium',done:''},{id:3,n:'Prepare notes',d:'Medium',done:''},{id:4,n:'Work on my website 1 hour',d:'Hard',done:''},{id:5,n:'Finish website v1 and deploy',d:'Boss',done:''}]}}
-function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}S=Object.assign(fresh(),S||{})}
+function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}S=Object.assign(fresh(),S||{});S.cfg=Object.assign({sfx:1,bgm:0,vib:1},S.cfg||{})}
 function lsave(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function save(){S.rev=(S.rev||0)+1;lsave();cloudSoon()}
 const need=l=>100+(l-1)*50,pick=a=>a[Math.floor(Math.random()*a.length)];
 function toast(m){const t=document.createElement('div');t.className='toast';t.innerHTML=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2800)}
-function addXP(n){S.xp+=n;let up=0;while(S.xp>=need(S.lvl)){S.xp-=need(S.lvl);S.lvl++;S.keys+=2;S.coins+=50;up++}if(up)toast('LEVEL UP! Level '+S.lvl+' · +2 🗝️ +50 🪙')}
+function addXP(n){S.xp+=n;let up=0;while(S.xp>=need(S.lvl)){S.xp-=need(S.lvl);S.lvl++;S.keys+=2;S.coins+=50;up++}if(up){SFX.lvlup();toast('LEVEL UP! Level '+S.lvl+' · +2 🗝️ +50 🪙')}}
 function nToday(){return S.tcount.d===today()?S.tcount.n:0}
 function ms(){if(S.ms.d!==today())S.ms={d:today(),c:[]};return S.ms}
 function doQuest(id){const q=S.quests.find(x=>x.id===id),t=today();if(q.done===t||q.done==='forever')return;const [xp,co]=DIFF[q.d];q.done=q.d==='Boss'?'forever':t;
@@ -147,34 +192,35 @@ if(S.tcount.d!==t)S.tcount={d:t,n:0};S.tcount.n++;S.total=(S.total||0)+1;
 const sb=Math.min(S.streak,7)*2;S.coins+=co+sb;let m='+'+xp+' XP · +'+(co+sb)+' 🪙';
 const r=Math.random();let k=r<.6?1:0;if(r>.9)k=3;if(q.d==='Boss')k+=2;S.keys+=k;if(k)m+=' · +'+k+' 🗝️'+(k===3?' JACKPOT!':'');
 if(S.tcount.n%3===0){S.tokens++;m+=' · +1 ⏱️ token'}
-addXP(xp);toast(m);save();render()}
-function claimMs(i){const m=ms();if(m.c.includes(i)||nToday()<MS[i][0])return;m.c.push(i);if(i===0)S.coins+=100;if(i===1)S.keys+=2;if(i===2){S.keys+=3;S.tokens++}save();render();toast('Milestone claimed: '+MS[i][2])}
+SFX.quest();addXP(xp);toast(m);save();render()}
+function claimMs(i){const m=ms();if(m.c.includes(i)||nToday()<MS[i][0])return;m.c.push(i);if(i===0)S.coins+=100;if(i===1)S.keys+=2;if(i===2){S.keys+=3;S.tokens++}SFX.coin();save();render();toast('Milestone claimed: '+MS[i][2])}
 function addQuest(){const n=document.getElementById('qn').value.trim();if(!n)return toast('Type a mission name');S.quests.push({id:Date.now(),n,d:document.getElementById('qd').value,done:''});tb='Daily Missions';save();render()}
 function delQuest(id){if(confirm('Delete this mission?')){S.quests=S.quests.filter(q=>q.id!==id);save();render()}}
-function useToken(){if(S.tokens<1)return toast('No tokens yet. Finish 3 missions to earn one.');if(confirm('Spend 1 token for 30 minutes of game time?')){S.tokens--;save();render();toast('Enjoy 30 minutes. You earned it!')}}
+function useToken(){if(S.tokens<1)return toast('No tokens yet. Finish 3 missions to earn one.');if(confirm('Spend 1 token for 30 minutes of game time?')){S.tokens--;SFX.token();save();render();toast('Enjoy 30 minutes. You earned it!')}}
 function roll(){let r;if(S.pity>=9)r=Math.random()<.8?'E':'L';else{let x=Math.random()*100,a=0;r='C';for(const k of'CREL'){a+=RAR[k].w;if(x<a){r=k;break}}}return pick(ITEMS.filter(i=>i.r===r))}
 function openCrate(){if(S.keys<1)return toast('No keys. Finish missions or buy one in the Store.');S.keys--;S.opens++;const it=roll();if(it.r==='E'||it.r==='L')S.pity=0;else S.pity++;
 const dupe=S.owned[it.id]>0;S.owned[it.id]=(S.owned[it.id]||0)+1;if(dupe)S.coins+=RAR[it.r].dupe;save();
-document.getElementById('bx').classList.add('shake');document.getElementById('ob').disabled=true;
-setTimeout(()=>{const m=document.createElement('div');m.className='modal';m.onclick=()=>{m.remove();render()};
+SFX.shake();document.getElementById('bx').classList.add('shake');document.getElementById('ob').disabled=true;
+setTimeout(()=>{SFX.loot(it.r);const m=document.createElement('div');m.className='modal';m.onclick=()=>{m.remove();render()};
 m.innerHTML='<div class="pop '+it.r+'"><div class="r'+it.r+'">'+RAR[it.r].n+(it.r==='L'?' ✨':'')+'</div><div class="big">'+ic(it)+'</div><h2>'+esc(it.name)+'</h2><div class="s">'+it.type+(dupe?' · Duplicate +'+RAR[it.r].dupe+' 🪙':' · NEW!')+'</div><p class="s" style="margin-top:12px">Tap to continue</p></div>';document.body.appendChild(m)},1100)}
 function seed(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return()=>{h=(h*1664525+1013904223)>>>0;return h/4294967296}}
 function offers(){const r=seed(today()),o=[];while(o.length<3){const i=ITEMS[Math.floor(r()*ITEMS.length)];if(!o.includes(i))o.push(i)}return o}
-function buyKey(){if(S.coins<50)return toast('Need 50 🪙');S.coins-=50;S.keys++;save();render()}
-function buyItem(id){const p=RAR[ITEMS[id].r].price;if(S.owned[id])return;if(S.coins<p)return toast('Need '+p+' 🪙');S.coins-=p;S.owned[id]=1;save();render();toast('Bought '+ITEMS[id].ic+' '+ITEMS[id].name)}
+function buyKey(){if(S.coins<50)return toast('Need 50 🪙');S.coins-=50;S.keys++;SFX.coin();save();render()}
+function buyItem(id){const p=RAR[ITEMS[id].r].price;if(S.owned[id])return;if(S.coins<p)return toast('Need '+p+' 🪙');S.coins-=p;S.owned[id]=1;SFX.coin();save();render();toast('Bought '+ITEMS[id].ic+' '+ITEMS[id].name)}
 function equip(t,id){S.eq[t]=id;save();look();render()}
 function code(){return btoa(unescape(encodeURIComponent(JSON.stringify({n:S.name,i:S.id,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖'}))))}
 function addFriend(){try{const o=JSON.parse(decodeURIComponent(escape(atob(document.getElementById('fc').value.trim()))));if(!o.i||o.i===S.id)throw 0;S.friends=S.friends.filter(f=>f.i!==o.i);S.friends.push(o);save();render();toast('Friend added: '+esc(o.n))}catch(e){toast('Invalid friend code')}}
 function copy(t){try{navigator.clipboard.writeText(t);toast('Copied!')}catch(e){toast('Copy failed')}}
 function setName(){const v=document.getElementById('pn').value.trim();if(v){S.name=v.slice(0,16);save();render()}}
-function importData(){try{const o=JSON.parse(document.getElementById('bk').value);if(!o.quests)throw 0;S=Object.assign(fresh(),o);save();look();render();toast('Backup loaded')}catch(e){toast('Invalid backup')}}
+function importData(){try{const o=JSON.parse(document.getElementById('bk').value);if(!o.quests)throw 0;S=Object.assign(fresh(),o);S.cfg=Object.assign({sfx:1,bgm:0,vib:1},S.cfg||{});save();look();render();toast('Backup loaded')}catch(e){toast('Invalid backup')}}
 function resetAll(){if(confirm('Erase ALL progress?')){S=fresh();save();look();go('')}}
+function toggleCfg(k){S.cfg[k]=S.cfg[k]?0:1;if(k==='bgm')SFX.setAmb(!!S.cfg.bgm);if(k==='sfx'&&S.cfg.sfx)SFX.coin();if(k==='vib'&&S.cfg.vib)SFX.vib(40);save();render()}
 function go(p,t){pg=p;tb=t||{missions:'Daily Missions',loadout:'Gun',clan:'Friends',profile:'Overview'}[p]||'';render();if(typeof tx!=='undefined')tx=p==='loadout'?-1.5:0}
 const IC=['pistol-gun','submachine-gun','sawed-off-shotgun','rifle','bow-arrow','assault-rifle','sniper-rifle','ak47','shotgun','machine-gun','bazooka','hoodie','baseball-cap','gloves','sunglasses','black-belt','cloak','armor-vest','crown','cape','graduate-cap','chef-toque','ninja-head','wizard-face','ninja-mask','vampire-dracula','dragon-head','robot-golem','cardboard-box','backpack','open-treasure-chest','emerald','cat','sitting-dog','fox-head','owl','wolf-head','unicorn'],ICC={C:'9aa0b5',R:'4aa8ff',E:'b45cff',L:'ffb020'};
 const IU=(n,c)=>'https://api.iconify.design/game-icons/'+n+'.svg?color=%23'+c,iconUrl=it=>IU(IC[it.id],ICC[it.r]);
 const fb=e=>' onerror="this.replaceWith(document.createTextNode(\''+e+'\'))">';
 const ic=it=>'<img class="ico" alt="" src="'+iconUrl(it)+'"'+fb(it.ic),cim=(n,c,e)=>'<img class="ci" alt="" src="'+IU(n,c)+'"'+fb(e);
-const cur=()=>'<div class="cur"><span>'+cim('two-coins','f5d300','🪙')+S.coins+'</span><span>'+cim('key','ffffff','🗝️')+S.keys+'</span><span>'+cim('stopwatch','3ddbd9','⏱️')+S.tokens+'</span></div>';
+const cur=()=>'<div class="cur"><span>'+cim('two-coins','f5d300','🪙')+S.coins+'</span><span>'+cim('key','ffffff','🗝️')+S.keys+'</span><span>'+cim('stopwatch','3ddbd9','⏱️')+S.tokens+'</span><button class="cfg" aria-label="Settings" onclick="go(\'profile\',\'Settings\')">⚙️</button></div>';
 const tabsH=a=>'<div class="tabs">'+a.map(t=>'<button class="'+(tb===t?'on':'')+'" onclick="tb=\''+t+'\';render()">'+t+'</button>').join('')+'</div>';
 const page=(title,body,half)=>'<div class="pg'+(half?' half':'')+'"><div class="ph"><button class="bk" aria-label="Back" onclick="go(\'\')">◀</button><h1>'+title+'</h1>'+cur()+'</div><div class="pb">'+body+'</div></div>';
 function home(){const d=S.quests.filter(q=>q.d!=='Boss'),dn=d.filter(q=>q.done===today()).length,n=nToday(),m=ms(),cl=MS.findIndex((x,i)=>n>=x[0]&&!m.c.includes(i)),o=offers()[0];
@@ -202,14 +248,18 @@ else c='<div class="fr"><div style="flex:1"><div class="s">Your ID</div><b>'+S.i
 return page('Clan',tabsH(['Friends','Leaderboard','Cloud','Backup'])+'<div class="ct">'+c+'</div>')}
 function render(){if(busy||inLogin)return;const f={missions:pMissions,store:pStore,crate:pCrate,loadout:pLoadout,profile:pProfile,clan:pClan}[pg];ui.innerHTML=f?f():home()}
 const RANKS=[[1,'Rookie'],[5,'Veteran'],[10,'Elite'],[15,'Pro'],[20,'Master'],[30,'Grand Master'],[40,'Legend']],rk=l=>{let r=0;RANKS.forEach((x,i)=>{if(l>=x[0])r=i});return r},lrew=n=>n%5?[50,1]:[150,3];
-function claimLvl(n){if(S.lvl<n||S.lr.includes(n))return;const[c,k]=lrew(n);S.lr.push(n);S.coins+=c;S.keys+=k;save();render();toast('Level '+n+' reward: +'+c+' 🪙 +'+k+' 🗝️')}
+function claimLvl(n){if(S.lvl<n||S.lr.includes(n))return;const[c,k]=lrew(n);S.lr.push(n);S.coins+=c;S.keys+=k;SFX.coin();save();render();toast('Level '+n+' reward: +'+c+' 🪙 +'+k+' 🗝️')}
 function pProfile(){let c;
 if(tb==='Safe House'){const own=Object.keys(S.owned).length;c='<div class="s" style="margin-bottom:6px">Collection '+own+'/'+ITEMS.length+'</div>'+['Gun','Skin','Character','Bundle','Pet'].map(t=>{const l=ITEMS.filter(i=>i.type===t);return '<h2 style="margin:8px 0 6px">'+t+'s '+l.filter(i=>S.owned[i.id]).length+'/'+l.length+'</h2>'+grid(l,0)}).join('')}
+else if(tb==='Settings'){const tg=(k,t,d)=>'<div class="fr"><div style="flex:1"><b>'+t+'</b><div class="s">'+d+'</div></div><button class="sm'+(S.cfg[k]?'':' alt')+'" onclick="toggleCfg(\''+k+'\')">'+(S.cfg[k]?'ON':'OFF')+'</button></div>';
+c='<h2>Audio & Haptics</h2><div style="margin-top:8px">'+tg('sfx','Sound Effects','Tactical UI clicks, mission fanfare, crate reveal & level-up audio')+tg('bgm','Lobby Ambience','Low-frequency tactical command hum in background')+tg('vib','Phone Vibration','Haptic feedback on taps, crate shakes, and rewards')+'</div>'+
+'<div class="fr" style="margin-top:10px"><div style="flex:1"><b>Test Audio</b><div class="s">Preview Legendary crate reveal fanfare</div></div><button class="sm" onclick="SFX.loot(\'L\')">PLAY TEST</button></div>'+
+'<p class="s" style="margin-top:10px">Audio is generated offline via Web Audio API ($0, zero data usage). Icons by game-icons.net (CC BY 3.0).</p>'}
 else{const r=rk(S.lvl),nx=RANKS[r+1],lv=[];for(let n=2;n<=Math.max(12,S.lvl+5);n++){const[cc,k]=lrew(n),got=S.lr.includes(n),can=S.lvl>=n;lv.push('<div class="lv'+(can?' ok':'')+'"><b>LV '+n+'</b><div>'+cc+' 🪙<br>'+k+' 🗝️</div>'+(got?'<div class="s">CLAIMED</div>':can?'<button class="sm" onclick="claimLvl('+n+')">CLAIM</button>':'<div class="s">LOCKED</div>')+'</div>')}
 c='<div class="rk"><div class="badge">'+(r+1)+'</div><div style="flex:1"><b style="font-size:1.2rem">'+esc(S.name)+'</b> <span class="s">'+S.id+'</span><div><b>'+RANKS[r][1]+'</b> <span class="s">Lv '+S.lvl+'</span></div><div class="bar" style="width:100%"><i style="width:'+S.xp/need(S.lvl)*100+'%"></i></div><div class="s">'+S.xp+'/'+need(S.lvl)+' XP'+(nx?' · next rank '+nx[1]+' at Lv '+nx[0]:' · max rank')+'</div></div></div>'+
 '<div class="stats"><div><b>'+(S.total||0)+'</b>Missions done</div><div><b>🔥'+S.streak+'</b>Day streak</div><div><b>'+S.opens+'</b>Draws</div><div><b>'+Object.keys(S.owned).length+'/'+ITEMS.length+'</b>Collection</div><div><b>#'+rank()+'</b>Friend league</div><div><b>'+S.tokens+'</b>Game tokens</div></div>'+
 '<h2>Ranks</h2><div class="rkl">'+RANKS.map((x,i)=>'<span class="'+(i===r?'on':'')+'">'+x[1]+' (Lv '+x[0]+')</span>').join('')+'</div><h2>Level rewards</h2><div class="track">'+lv.join('')+'</div>'}
-return page('Profile',tabsH(['Overview','Safe House'])+'<div class="ct">'+c+'</div>')}
+return page('Profile',tabsH(['Overview','Safe House','Settings'])+'<div class="ct">'+c+'</div>')}
 /* ---------- CLOUD (Firebase Auth + Firestore) ---------- */
 let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogin=0,lastDay='';
 const TO=()=>({signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
@@ -218,7 +268,7 @@ AU.getRedirectResult().catch(e=>{if(e&&e.code)toast('Login failed: '+esc(e.code)
 AU.onAuthStateChanged(async u=>{USER=u;if(u){cst='Signing in...';await cloudLoad()}else{cst='Local only';if(unsub)unsub()}upd();render()})}catch(e){cst='Cloud error';console.warn(e)}}
 function gLogin(){if(!AU)return toast('Cloud is not set up yet. Paste your Firebase config first.');const p=new firebase.auth.GoogleAuthProvider();p.setCustomParameters({prompt:'select_account'});AU.signInWithPopup(p).catch(e=>{if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')AU.signInWithRedirect(p);else if(e.code!=='auth/popup-closed-by-user')toast('Login failed: '+esc(e.code||e.message))})}
 async function cloudLoad(){try{await syncClock();const d=await DB.collection('saves').doc(USER.uid).get();
-if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){if((S.total||0)>0&&!confirm('Cloud save found: Level '+c.lvl+'. OK = use cloud progress. Cancel = keep THIS phone and overwrite the cloud.')){await cloudPush();cst='Synced ✓'}else{S=Object.assign(fresh(),c,{reg:1});lsave();look();toast('Cloud progress loaded ☁️')}}else{S.reg=1;lsave();await cloudPush()}}
+if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){if((S.total||0)>0&&!confirm('Cloud save found: Level '+c.lvl+'. OK = use cloud progress. Cancel = keep THIS phone and overwrite the cloud.')){await cloudPush();cst='Synced ✓'}else{S=Object.assign(fresh(),c,{reg:1});S.cfg=Object.assign({sfx:1,bgm:0,vib:1},S.cfg||{});lsave();look();toast('Cloud progress loaded ☁️')}}else{S.reg=1;lsave();await cloudPush()}}
 else{if(!S.reg){S.name=(USER.displayName||'Player').split(' ')[0].slice(0,16);S.reg=1}lsave();await cloudPush()}
 cst='Synced ✓';listenFriends();if(inLogin&&S.reg){inLogin=0;loading()}}catch(e){cst='Sync failed';console.warn(e);toast('Cloud error. Check Firestore rules.')}}
 async function cloudPush(){if(!DB||!USER)return;try{cst='Saving...';upd();const b=DB.batch(),T=firebase.firestore.FieldValue.serverTimestamp();
@@ -263,7 +313,7 @@ const bl=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.8,8),M.dark);bl.ro
 const rm=new THREE.MeshStandardMaterial({color:0x2a3566,flatShading:true,roughness:1});
 for(let i=0;i<9;i++){const k=new THREE.Mesh(new THREE.IcosahedronGeometry(.5+Math.random()*1.3,0),rm);k.position.set(-9+Math.random()*18,-1+Math.random()*5,-3-Math.random()*8);SC.add(k);rocks.push(k)}
 const pt=new Float32Array(300);for(let i=0;i<300;i++)pt[i]=(Math.random()-.5)*(i%3==1?8:20);const pg2=new THREE.BufferGeometry();pg2.setAttribute('position',new THREE.BufferAttribute(pt,3));const ps=new THREE.Points(pg2,new THREE.PointsMaterial({color:0xbcd0ff,size:.05}));ps.position.z=-2;SC.add(ps);
-if(solU&&THREE.GLTFLoader)new THREE.GLTFLoader().load(solU,g=>{const m=g.scene,b=new THREE.Box3().setFromObject(m),sz=b.getSize(new THREE.Vector3()),s=2.9/sz.y,c=b.getCenter(new THREE.Vector3());m.scale.setScalar(s);m.position.set(-c.x*s,-b.min.y*s,-c.z*s);m.traverse(o=>{if(o.isMesh)o.frustumCulled=false});SOL.add(m);SOLM=m;PR.visible=false;GL3=1;PR.remove(GUN);SOL.add(GUN);GUN.position.set(1.9,1.6,0);GUN.rotation.set(0,0,0);MIX=new THREE.AnimationMixer(m);const cl=THREE.AnimationClip.findByName(g.animations,'Idle')||g.animations[0];if(cl)MIX.clipAction(cl).play();look()},undefined,e=>console.warn('soldier model failed',e));
+if(solU&&THREE.GLTFLoader)new THREE.GLTFLoader().load(solU,g=>{const m=g.scene,b=new THREE.Box3().setFromObject(m),sz=b.getSize(new THREE.Vector3()),s=2.9/sz.y,c=b.getCenter(new THREE.Vector3());m.scale.setScalar(s);m.rotation.y=Math.PI;m.position.set(c.x*s,-b.min.y*s,c.z*s);m.traverse(o=>{if(o.isMesh)o.frustumCulled=false});SOL.add(m);SOLM=m;PR.visible=false;GL3=1;PR.remove(GUN);SOL.add(GUN);GUN.position.set(1.9,1.6,0);GUN.rotation.set(0,0,0);MIX=new THREE.AnimationMixer(m);const cl=THREE.AnimationClip.findByName(g.animations,'Idle')||g.animations[0];if(cl)MIX.clipAction(cl).play();look()},undefined,e=>console.warn('soldier model failed',e));
 look();const cv=document.getElementById('gl');let lx=null;
 addEventListener('pointerdown',e=>{if(e.target.closest('button,input,.pg>.pb:not(.x)'))return;lx=e.clientX});addEventListener('pointermove',e=>{if(lx!==null){drag+=(e.clientX-lx)*.012;lx=e.clientX}});addEventListener('pointerup',()=>lx=null);
 function rs(){R.setSize(innerWidth,innerHeight);CAM.aspect=innerWidth/innerHeight;CAM.updateProjectionMatrix()}rs();addEventListener('resize',rs);
@@ -273,7 +323,7 @@ const TIPS=['Every 3 missions = 1 game token','Boss missions give 2 extra keys',
 async function grab(urls){for(const u of urls){try{let r=window.caches?await caches.match(u):null;if(!r){r=await fetch(u);if(!r.ok)continue;if(window.caches)try{(await caches.open('lul1')).put(u,r.clone())}catch(e){}}const b=await r.blob();return{u:URL.createObjectURL(b),mb:b.size/1048576}}catch(e){}}return null}
 function loginScr(){inLogin=1;ui.innerHTML='<div class="scr"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="s" style="margin:.3rem 0 1.1rem">Season 1 · Finish missions. Open crates. Rank up.</div><div style="width:min(320px,70vw)"><input id="ln" maxlength="16" placeholder="Enter your callsign" value="'+(S.name!=='Player'?esc(S.name):'')+'"><button class="sm" style="width:100%;margin-top:8px;padding:.7rem" onclick="gLogin()">SIGN IN WITH GOOGLE (sync phones)</button><button class="sm alt" style="width:100%;margin-top:6px;padding:.6rem" onclick="doLogin()">PLAY AS GUEST (this phone only)</button><button class="sm alt" style="width:100%;margin-top:6px" onclick="impLogin()">LOAD BACKUP</button></div><div class="s" style="position:absolute;bottom:.6rem">Progress is saved on this device</div></div>'}
 function doLogin(){const v=document.getElementById('ln').value.trim();if(!v)return toast('Enter a callsign');S.name=v.slice(0,16);S.reg=1;save();loading()}
-function impLogin(){const t=prompt('Paste your backup text');if(!t)return;try{const o=JSON.parse(t);if(!o.quests)throw 0;S=Object.assign(fresh(),o,{reg:1});save();loading()}catch(e){toast('Invalid backup')}}
+function impLogin(){const t=prompt('Paste your backup text');if(!t)return;try{const o=JSON.parse(t);if(!o.quests)throw 0;S=Object.assign(fresh(),o,{reg:1});S.cfg=Object.assign({sfx:1,bgm:0,vib:1},S.cfg||{});save();loading()}catch(e){toast('Invalid backup')}}
 async function loading(){busy=1;inLogin=0;ui.innerHTML='<div class="scr" id="sc"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="lbar"><div class="s" id="lt"></div><div class="bar" style="width:100%;height:.6rem"><i id="lb" style="width:0"></i></div><div class="s" id="tp" style="margin-top:6px"></div></div></div>';
 const sc=document.getElementById('sc'),lb=document.getElementById('lb'),lt=document.getElementById('lt');document.getElementById('tp').textContent='TIP: '+pick(TIPS);
 const tot=ITEMS.length+4;let n=0,mb=0;const st=t=>{n++;lb.style.width=Math.round(n/tot*100)+'%';lt.textContent=t+' · '+mb.toFixed(1)+' MB downloaded'};
@@ -281,7 +331,7 @@ lt.textContent='Connecting to server...';await wait(300);await syncClock();
 const bg=await grab(BGS);if(bg){mb+=bg.mb;sc.style.backgroundImage='url('+bg.u+')'}st('Downloading environment');
 const sd=await grab(SOLS);if(sd)mb+=sd.mb;st('Downloading 3D models');
 await Promise.all(ITEMS.map(it=>new Promise(r=>{const i=new Image();i.onload=i.onerror=()=>{st('Downloading icons');r()};i.src=iconUrl(it)})));
-const wu=await wallpaper();if(wu)document.getElementById('wp').style.backgroundImage='url("'+wu+'")';st('Fetching daily wallpaper');st('Starting engine');initGL(wu?null:bg&&bg.u,sd&&sd.u);await wait(600);busy=0;pg='';render()}
+const wu=await wallpaper();if(wu)document.getElementById('wp').style.backgroundImage='url("'+wu+'")';st('Fetching daily wallpaper');st('Starting engine');initGL(wu?null:bg&&bg.u,sd&&sd.u);await wait(600);busy=0;pg='';render();if(S.cfg&&S.cfg.bgm)SFX.setAmb(true)}
 load();cloudInit();if(S.reg)loading();else loginScr();
 setInterval(()=>{const n=now(),c=document.getElementById('clk');if(c){const e=new Date(n);e.setHours(24,0,0,0);const s=Math.max(0,Math.floor((e-n)/1000));c.textContent='🕒 '+n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' · DAILY RESET IN '+[Math.floor(s/3600),Math.floor(s%3600/60),s%60].map(x=>String(x).padStart(2,'0')).join(':')}if(!lastDay)lastDay=today();else if(today()!==lastDay){lastDay=today();render()}},1000);
 function tod(){const h=now().getHours(),e=document.getElementById('tod');if(e)e.style.opacity=h>=19||h<5?.45:h>=17||h<7?.18:0}tod();setInterval(tod,60000);
