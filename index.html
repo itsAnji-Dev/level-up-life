@@ -117,43 +117,101 @@ async function installApp(){
 }
 const isStandalone=()=>window.matchMedia('(display-mode: fullscreen)').matches||window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
 
-/* ===== OFFLINE TACTICAL SOUND ENGINE (Web Audio API, $0, zero external files) ===== */
+/* ===== REAL RECORDED GAME AUDIO ENGINE (Google Sound Library + Offline Fallback) ===== */
 const SFX=(()=>{
-  let ctx=null,amb=null,ambG=null;
-  const ac=()=>{if(!ctx){const A=window.AudioContext||window.webkitAudioContext;if(A)ctx=new A()}if(ctx&&ctx.state==='suspended')ctx.resume();return ctx};
+  const G='https://actions.google.com/sounds/v1/';
+  const LIB={
+    click:[G+'weapons/rifle_fire_select.ogg'],
+    back:[G+'tools/ejecting_a_cassette.ogg'],
+    coin:[G+'weapons/shell_casings_revolver.ogg'],
+    gunC:[G+'weapons/gun_parts_handling.ogg'],
+    gunR:[G+'weapons/rifle_charging_handle.ogg'],
+    gunE:[G+'weapons/shot_gun_handling.ogg'],
+    gunL:[G+'weapons/cocking_a_50cal_gun.ogg'],
+    shake:[G+'science_fiction/suspense_builder.ogg'],
+    lootC:[G+'weapons/gun_powder_ignite.ogg',G+'weapons/gun_parts_handling.ogg'],
+    lootR:[G+'weapons/gun_reload.ogg',G+'weapons/rifle_charging_handle.ogg'],
+    lootE:[G+'science_fiction/sci_fi_vortex.ogg',G+'weapons/shot_gun_handling.ogg'],
+    lootL:[G+'alarms/bugle_tune.ogg',G+'alarms/medium_bell_ringing_near.ogg'],
+    congrats:[G+'alarms/bugle_tune.ogg',G+'alarms/medium_bell_ringing_near.ogg']
+  };
+  const pool={};
+  let ctx=null,amb=null;
   const cfg=()=>S&&S.cfg?S.cfg:{sfx:1,bgm:0,vib:1};
   function vib(ms){try{if(cfg().vib&&navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
-  function tone(f1,f2,dur,type='triangle',vol=.14,delay=0){
-    if(!cfg().sfx)return;const c=ac();if(!c)return;
-    const t=c.currentTime+delay,o=c.createOscillator(),g=c.createGain();
+  function synth(f1,f2,dur,type='triangle',vol=.14,delay=0){
+    const A=window.AudioContext||window.webkitAudioContext;if(!A)return;
+    if(!ctx)ctx=new A();if(ctx.state==='suspended')ctx.resume();
+    const t=ctx.currentTime+delay,o=ctx.createOscillator(),g=ctx.createGain();
     o.type=type;o.frequency.setValueAtTime(f1,t);
     if(f2&&f2!==f1)o.frequency.exponentialRampToValueAtTime(Math.max(20,f2),t+dur);
     g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+.012);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
-    o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+dur+.02);
+    o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+dur+.02);
   }
-  function click(){vib(12);tone(760,320,.055,'triangle',.11)}
-  function back(){vib(10);tone(420,220,.07,'sine',.1)}
-  function coin(){vib(18);tone(987,1318,.08,'sine',.13);tone(1318,1568,.12,'sine',.11,.06)}
-  function quest(){vib([25,30,45]);[523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f,f*1.01,.18,'triangle',.14,i*.065))}
-  function lvlup(){vib([40,40,40,40,90]);[440,554.37,659.25,880,1108.73].forEach((f,i)=>tone(f,f,.32,'sawtooth',.11,i*.08))}
-  function shake(){vib([25,45,25,45,35,45,50]);for(let i=0;i<7;i++)tone(110+i*22,85,.08,'square',.08,i*.13)}
+  function clip(urls,vol=.75,maxMs=2800,fb=null){
+    if(!cfg().sfx)return;
+    const u=Array.isArray(urls)?urls[Math.floor(Math.random()*urls.length)]:urls;
+    try{
+      if(!pool[u]){pool[u]=new Audio(u);pool[u].preload='auto'}
+      const a=pool[u].cloneNode();
+      a.volume=vol;
+      const p=a.play();
+      if(p&&p.catch)p.catch(()=>{if(fb)fb()});
+      if(maxMs)setTimeout(()=>{try{a.pause();a.currentTime=0}catch(e){}},maxMs);
+    }catch(e){if(fb)fb()}
+  }
+  function preload(){Object.values(LIB).flat().forEach(u=>{if(!pool[u]){pool[u]=new Audio(u);pool[u].preload='auto'}})}
+  function click(){vib(12);clip(LIB.click,.55,450,()=>synth(760,320,.055,'triangle',.11))}
+  function back(){vib(10);clip(LIB.back,.65,650,()=>synth(420,220,.07,'sine',.1))}
+  function coin(){vib(20);clip(LIB.coin,.8,1200,()=>synth(987,1568,.12,'sine',.13))}
+  function equip(type,r){
+    vib([20,30,30]);
+    if(type==='gun'){
+      const k='gun'+(r||'C');
+      clip(LIB[k]||LIB.gunC,.9,1800,()=>synth(220,440,.15,'sawtooth',.14));
+    }else{
+      clip(LIB.gunR,.75,1200,()=>synth(440,660,.12,'triangle',.12));
+    }
+  }
+  function quest(){
+    vib([25,30,55]);
+    clip(LIB.congrats,.8,2400,()=>{[523.25,659.25,783.99,1046.5].forEach((f,i)=>synth(f,f*1.01,.18,'triangle',.14,i*.065))});
+  }
+  function lvlup(){
+    vib([40,40,40,40,100]);
+    clip(LIB.lootL,.95,3600,()=>{[440,554.37,659.25,880,1108.73].forEach((f,i)=>synth(f,f,.32,'sawtooth',.12,i*.08))});
+  }
+  function shake(){
+    vib([25,45,25,45,35,45,50]);
+    clip(LIB.shake,.85,1150,()=>{for(let i=0;i<7;i++)synth(110+i*22,85,.08,'square',.08,i*.13)});
+  }
   function loot(r){
-    if(r==='L'){vib([60,40,60,40,140]);[523,659,784,1046,1318,1568].forEach((f,i)=>tone(f,f*1.02,.42,'sawtooth',.13,i*.07))}
-    else if(r==='E'){vib([45,35,90]);[440,554,659,880,1108].forEach((f,i)=>tone(f,f,.32,'triangle',.14,i*.07))}
-    else if(r==='R'){vib([30,30,60]);[392,493.88,587.33,783.99].forEach((f,i)=>tone(f,f,.24,'triangle',.13,i*.07))}
-    else{vib(35);tone(330,440,.18,'triangle',.12);tone(440,523,.22,'triangle',.12,.09)}
+    if(r==='L'){
+      vib([60,40,60,40,140]);
+      clip(LIB.lootL,1,3800,()=>{[523,659,784,1046,1318,1568].forEach((f,i)=>synth(f,f*1.02,.42,'sawtooth',.13,i*.07))});
+    }else if(r==='E'){
+      vib([45,35,90]);
+      clip(LIB.lootE,.9,2800,()=>{[440,554,659,880,1108].forEach((f,i)=>synth(f,f,.32,'triangle',.14,i*.07))});
+    }else if(r==='R'){
+      vib([30,30,60]);
+      clip(LIB.lootR,.85,2000,()=>{[392,493.88,587.33,783.99].forEach((f,i)=>synth(f,f,.24,'triangle',.13,i*.07))});
+    }else{
+      vib(35);
+      clip(LIB.lootC,.8,1600,()=>synth(330,523,.2,'triangle',.12));
+    }
   }
-  function token(){vib([40,50,80]);tone(330,660,.25,'sawtooth',.12);tone(660,880,.3,'triangle',.12,.12)}
+  function token(){vib([40,50,80]);clip(LIB.gunL,.9,1800,()=>synth(330,880,.28,'sawtooth',.12))}
   function setAmb(on){
     if(!on){if(amb){try{amb.stop()}catch(e){}amb=null}return}
-    const c=ac();if(!c||amb)return;
-    const o1=c.createOscillator(),o2=c.createOscillator(),f=c.createBiquadFilter(),g=c.createGain();
+    const A=window.AudioContext||window.webkitAudioContext;if(!A||amb)return;
+    if(!ctx)ctx=new A();if(ctx.state==='suspended')ctx.resume();
+    const o1=ctx.createOscillator(),o2=ctx.createOscillator(),f=ctx.createBiquadFilter(),g=ctx.createGain();
     o1.type='sawtooth';o1.frequency.value=55;o2.type='triangle';o2.frequency.value=82.41;
     f.type='lowpass';f.frequency.value=160;g.gain.value=.035;
-    o1.connect(f);o2.connect(f);f.connect(g);g.connect(c.destination);
-    o1.start();o2.start();amb={stop(){o1.stop();o2.stop()}};ambG=g;
+    o1.connect(f);o2.connect(f);f.connect(g);g.connect(ctx.destination);
+    o1.start();o2.start();amb={stop(){o1.stop();o2.stop()}};
   }
-  return{click,back,coin,quest,lvlup,shake,loot,token,setAmb,vib};
+  return{preload,click,back,coin,equip,quest,lvlup,shake,loot,token,setAmb,vib};
 })();
 document.addEventListener('pointerdown',e=>{
   const b=e.target.closest('button,select');
@@ -207,7 +265,7 @@ function seed(s){let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0
 function offers(){const r=seed(today()),o=[];while(o.length<3){const i=ITEMS[Math.floor(r()*ITEMS.length)];if(!o.includes(i))o.push(i)}return o}
 function buyKey(){if(S.coins<50)return toast('Need 50 🪙');S.coins-=50;S.keys++;SFX.coin();save();render()}
 function buyItem(id){const p=RAR[ITEMS[id].r].price;if(S.owned[id])return;if(S.coins<p)return toast('Need '+p+' 🪙');S.coins-=p;S.owned[id]=1;SFX.coin();save();render();toast('Bought '+ITEMS[id].ic+' '+ITEMS[id].name)}
-function equip(t,id){S.eq[t]=id;save();look();render()}
+function equip(t,id){S.eq[t]=id;if(id>=0)SFX.equip(t,ITEMS[id].r);save();look();render()}
 function code(){return btoa(unescape(encodeURIComponent(JSON.stringify({n:S.name,i:S.id,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖'}))))}
 function addFriend(){try{const o=JSON.parse(decodeURIComponent(escape(atob(document.getElementById('fc').value.trim()))));if(!o.i||o.i===S.id)throw 0;S.friends=S.friends.filter(f=>f.i!==o.i);S.friends.push(o);save();render();toast('Friend added: '+esc(o.n))}catch(e){toast('Invalid friend code')}}
 function copy(t){try{navigator.clipboard.writeText(t);toast('Copied!')}catch(e){toast('Copy failed')}}
@@ -252,9 +310,9 @@ function claimLvl(n){if(S.lvl<n||S.lr.includes(n))return;const[c,k]=lrew(n);S.lr
 function pProfile(){let c;
 if(tb==='Safe House'){const own=Object.keys(S.owned).length;c='<div class="s" style="margin-bottom:6px">Collection '+own+'/'+ITEMS.length+'</div>'+['Gun','Skin','Character','Bundle','Pet'].map(t=>{const l=ITEMS.filter(i=>i.type===t);return '<h2 style="margin:8px 0 6px">'+t+'s '+l.filter(i=>S.owned[i.id]).length+'/'+l.length+'</h2>'+grid(l,0)}).join('')}
 else if(tb==='Settings'){const tg=(k,t,d)=>'<div class="fr"><div style="flex:1"><b>'+t+'</b><div class="s">'+d+'</div></div><button class="sm'+(S.cfg[k]?'':' alt')+'" onclick="toggleCfg(\''+k+'\')">'+(S.cfg[k]?'ON':'OFF')+'</button></div>';
-c='<h2>Audio & Haptics</h2><div style="margin-top:8px">'+tg('sfx','Sound Effects','Tactical UI clicks, mission fanfare, crate reveal & level-up audio')+tg('bgm','Lobby Ambience','Low-frequency tactical command hum in background')+tg('vib','Phone Vibration','Haptic feedback on taps, crate shakes, and rewards')+'</div>'+
-'<div class="fr" style="margin-top:10px"><div style="flex:1"><b>Test Audio</b><div class="s">Preview Legendary crate reveal fanfare</div></div><button class="sm" onclick="SFX.loot(\'L\')">PLAY TEST</button></div>'+
-'<p class="s" style="margin-top:10px">Audio is generated offline via Web Audio API ($0, zero data usage). Icons by game-icons.net (CC BY 3.0).</p>'}
+c='<h2>Audio & Haptics</h2><div style="margin-top:8px">'+tg('sfx','Game Sound Effects','Real tactical weapon clicks, crate suspense, & victory fanfare')+tg('bgm','Lobby Ambience','Low-frequency tactical command hum in background')+tg('vib','Phone Vibration','Haptic feedback on taps, crate shakes, and rewards')+'</div>'+
+'<div class="fr" style="margin-top:10px"><div style="flex:1"><b>Preview Game Sounds</b><div class="s">Test real weapon cocking, congrats & crate reveal audio</div></div><button class="sm alt" onclick="SFX.equip(\'gun\',\'L\')">🔫 .50 CAL</button><button class="sm" onclick="SFX.loot(\'L\')">🎺 VICTORY</button></div>'+
+'<p class="s" style="margin-top:10px">Real game audio cached offline via Service Worker ($0, zero data usage after first load). Icons by game-icons.net (CC BY 3.0).</p>'}
 else{const r=rk(S.lvl),nx=RANKS[r+1],lv=[];for(let n=2;n<=Math.max(12,S.lvl+5);n++){const[cc,k]=lrew(n),got=S.lr.includes(n),can=S.lvl>=n;lv.push('<div class="lv'+(can?' ok':'')+'"><b>LV '+n+'</b><div>'+cc+' 🪙<br>'+k+' 🗝️</div>'+(got?'<div class="s">CLAIMED</div>':can?'<button class="sm" onclick="claimLvl('+n+')">CLAIM</button>':'<div class="s">LOCKED</div>')+'</div>')}
 c='<div class="rk"><div class="badge">'+(r+1)+'</div><div style="flex:1"><b style="font-size:1.2rem">'+esc(S.name)+'</b> <span class="s">'+S.id+'</span><div><b>'+RANKS[r][1]+'</b> <span class="s">Lv '+S.lvl+'</span></div><div class="bar" style="width:100%"><i style="width:'+S.xp/need(S.lvl)*100+'%"></i></div><div class="s">'+S.xp+'/'+need(S.lvl)+' XP'+(nx?' · next rank '+nx[1]+' at Lv '+nx[0]:' · max rank')+'</div></div></div>'+
 '<div class="stats"><div><b>'+(S.total||0)+'</b>Missions done</div><div><b>🔥'+S.streak+'</b>Day streak</div><div><b>'+S.opens+'</b>Draws</div><div><b>'+Object.keys(S.owned).length+'/'+ITEMS.length+'</b>Collection</div><div><b>#'+rank()+'</b>Friend league</div><div><b>'+S.tokens+'</b>Game tokens</div></div>'+
@@ -324,7 +382,7 @@ async function grab(urls){for(const u of urls){try{let r=window.caches?await cac
 function loginScr(){inLogin=1;ui.innerHTML='<div class="scr"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="s" style="margin:.3rem 0 1.1rem">Season 1 · Finish missions. Open crates. Rank up.</div><div style="width:min(320px,70vw)"><input id="ln" maxlength="16" placeholder="Enter your callsign" value="'+(S.name!=='Player'?esc(S.name):'')+'"><button class="sm" style="width:100%;margin-top:8px;padding:.7rem" onclick="gLogin()">SIGN IN WITH GOOGLE (sync phones)</button><button class="sm alt" style="width:100%;margin-top:6px;padding:.6rem" onclick="doLogin()">PLAY AS GUEST (this phone only)</button><button class="sm alt" style="width:100%;margin-top:6px" onclick="impLogin()">LOAD BACKUP</button></div><div class="s" style="position:absolute;bottom:.6rem">Progress is saved on this device</div></div>'}
 function doLogin(){const v=document.getElementById('ln').value.trim();if(!v)return toast('Enter a callsign');S.name=v.slice(0,16);S.reg=1;save();loading()}
 function impLogin(){const t=prompt('Paste your backup text');if(!t)return;try{const o=JSON.parse(t);if(!o.quests)throw 0;S=Object.assign(fresh(),o,{reg:1});S.cfg=Object.assign({sfx:1,bgm:0,vib:1},S.cfg||{});save();loading()}catch(e){toast('Invalid backup')}}
-async function loading(){busy=1;inLogin=0;ui.innerHTML='<div class="scr" id="sc"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="lbar"><div class="s" id="lt"></div><div class="bar" style="width:100%;height:.6rem"><i id="lb" style="width:0"></i></div><div class="s" id="tp" style="margin-top:6px"></div></div></div>';
+async function loading(){busy=1;inLogin=0;SFX.preload();ui.innerHTML='<div class="scr" id="sc"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="lbar"><div class="s" id="lt"></div><div class="bar" style="width:100%;height:.6rem"><i id="lb" style="width:0"></i></div><div class="s" id="tp" style="margin-top:6px"></div></div></div>';
 const sc=document.getElementById('sc'),lb=document.getElementById('lb'),lt=document.getElementById('lt');document.getElementById('tp').textContent='TIP: '+pick(TIPS);
 const tot=ITEMS.length+4;let n=0,mb=0;const st=t=>{n++;lb.style.width=Math.round(n/tot*100)+'%';lt.textContent=t+' · '+mb.toFixed(1)+' MB downloaded'};
 lt.textContent='Connecting to server...';await wait(300);await syncClock();
