@@ -1,4 +1,4 @@
-const CACHE_NAME = 'levelup-life-ops-v4';
+const CACHE_NAME = 'levelup-life-ops-v5';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -24,7 +24,6 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Never intercept Firebase Auth redirects, Google Sign-In, or Firestore live sync
   if (
     url.pathname.startsWith('/__/auth') ||
     url.hostname.includes('googleapis.com') ||
@@ -34,7 +33,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Network-First for HTML pages so mobile & desktop always get the latest index.html
   if (event.request.mode === 'navigate' || url.pathname.endsWith('index.html')) {
     event.respondWith(
       fetch(event.request)
@@ -48,7 +46,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Cache-First for icons, manifest, and static assets
   if (event.request.method === 'GET') {
     event.respondWith(
       caches.match(event.request).then(cached => {
