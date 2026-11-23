@@ -1,7 +1,6 @@
-/* ===== 3D SOLDIER, FPP VIEWMODEL, RELOAD/SLIDE/SCOPE, SCROLL GUN TESTER, LOADOUT & 3D WORLD ===== */
+/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO, GUNSMITH & CODM CUSTOM HUD ===== */
 let AR = null;
 
-/* Register SW update listener so already-open/already-played tabs reload cleanly onto latest build */
 (function setupSwAutoSync() {
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.addEventListener('message', ev => {
@@ -38,7 +37,156 @@ function resolveSkyHex(rawSky, mapId) {
   return 0x6ea8dc;
 }
 
-/* ===== PROCEDURAL CANVAS TEXTURES FOR REALISTIC 3D ENVIRONMENT ===== */
+/* ===== PROCEDURAL BALLISTIC SOUND ENGINE ===== */
+const GUN_AUDIO = (() => {
+  let ctx = null, noiseBuf = null;
+
+  function ensureCtx() {
+    if (typeof SFX !== 'undefined' && SFX.muted) return null;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!ctx) ctx = new AC();
+    if (ctx.state === 'suspended') {
+      try { ctx.resume(); } catch (e) {}
+    }
+    if (!noiseBuf && ctx) {
+      const len = Math.floor(ctx.sampleRate * 1.4);
+      noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.28));
+      }
+    }
+    return ctx;
+  }
+
+  function playShot(cat = 'ar', suppressed = false) {
+    const ac = ensureCtx();
+    if (!ac) return;
+    const now = ac.currentTime;
+
+    const cfg = {
+      ar:       { punchStart: 195, punchEnd: 42, punchDur: 0.14, noiseFilter: suppressed ? 1400 : 3200, noiseDur: 0.17, gain: suppressed ? 0.22 : 0.38 },
+      smg:      { punchStart: 240, punchEnd: 58, punchDur: 0.09, noiseFilter: suppressed ? 1600 : 4100, noiseDur: 0.11, gain: suppressed ? 0.20 : 0.34 },
+      sniper:   { punchStart: 155, punchEnd: 28, punchDur: 0.28, noiseFilter: 5200, noiseDur: 0.42, gain: 0.50 },
+      shotgun:  { punchStart: 130, punchEnd: 26, punchDur: 0.24, noiseFilter: 2400, noiseDur: 0.34, gain: 0.48 },
+      launcher: { punchStart: 95,  punchEnd: 22, punchDur: 0.35, noiseFilter: 1100, noiseDur: 0.48, gain: 0.46 }
+    }[cat] || { punchStart: 195, punchEnd: 42, punchDur: 0.14, noiseFilter: 3200, noiseDur: 0.17, gain: 0.36 };
+
+    const osc = ac.createOscillator();
+    const oscGain = ac.createGain();
+    osc.type = cat === 'sniper' || cat === 'shotgun' ? 'sawtooth' : 'triangle';
+    osc.frequency.setValueAtTime(cfg.punchStart, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, cfg.punchEnd), now + cfg.punchDur);
+    oscGain.gain.setValueAtTime(cfg.gain, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + cfg.punchDur);
+    osc.connect(oscGain).connect(ac.destination);
+    osc.start(now);
+    osc.stop(now + cfg.punchDur + 0.02);
+
+    if (noiseBuf) {
+      const ns = ac.createBufferSource();
+      ns.buffer = noiseBuf;
+      const filter = ac.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(cfg.noiseFilter, now);
+      filter.Q.setValueAtTime(cat === 'sniper' ? 1.4 : 0.85, now);
+
+      const nGain = ac.createGain();
+      nGain.gain.setValueAtTime(cfg.gain * 0.95, now);
+      nGain.gain.exponentialRampToValueAtTime(0.001, now + cfg.noiseDur);
+
+      ns.connect(filter).connect(nGain).connect(ac.destination);
+      ns.start(now);
+      ns.stop(now + cfg.noiseDur + 0.02);
+    }
+
+    if (cat === 'sniper' || cat === 'shotgun') {
+      const boltAt = now + (cat === 'sniper' ? 0.24 : 0.20);
+      const bOsc = ac.createOscillator();
+      const bGain = ac.createGain();
+      bOsc.type = 'square';
+      bOsc.frequency.setValueAtTime(1150, boltAt);
+      bOsc.frequency.exponentialRampToValueAtTime(320, boltAt + 0.045);
+      bGain.gain.setValueAtTime(0.14, boltAt);
+      bGain.gain.exponentialRampToValueAtTime(0.001, boltAt + 0.05);
+      bOsc.connect(bGain).connect(ac.destination);
+      bOsc.start(boltAt);
+      bOsc.stop(boltAt + 0.06);
+    }
+  }
+
+  function playReload(cat = 'ar') {
+    const ac = ensureCtx();
+    if (!ac) return;
+    const now = ac.currentTime;
+    const clicks = cat === 'shotgun' ? [0.05, 0.25, 0.45, 0.65, 0.88] : [0.08, 0.48, 0.92];
+    clicks.forEach((off, i) => {
+      const t = now + off;
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(i === clicks.length - 1 ? 780 : 520, t);
+      o.frequency.exponentialRampToValueAtTime(190, t + 0.055);
+      g.gain.setValueAtTime(0.18, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+      o.connect(g).connect(ac.destination);
+      o.start(t);
+      o.stop(t + 0.07);
+    });
+  }
+
+  function playHitmarker(kill = false) {
+    const ac = ensureCtx();
+    if (!ac) return;
+    const now = ac.currentTime;
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(kill ? 1480 : 980, now);
+    o.frequency.exponentialRampToValueAtTime(kill ? 620 : 440, now + (kill ? 0.12 : 0.05));
+    g.gain.setValueAtTime(kill ? 0.22 : 0.14, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + (kill ? 0.13 : 0.06));
+    o.connect(g).connect(ac.destination);
+    o.start(now);
+    o.stop(now + 0.14);
+  }
+
+  function playExplosion() {
+    const ac = ensureCtx();
+    if (!ac) return;
+    const now = ac.currentTime;
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(110, now);
+    o.frequency.exponentialRampToValueAtTime(20, now + 0.55);
+    g.gain.setValueAtTime(0.45, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.58);
+    o.connect(g).connect(ac.destination);
+    o.start(now);
+    o.stop(now + 0.6);
+
+    if (noiseBuf) {
+      const ns = ac.createBufferSource();
+      ns.buffer = noiseBuf;
+      const lp = ac.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(1350, now);
+      lp.frequency.exponentialRampToValueAtTime(180, now + 0.65);
+      const ng = ac.createGain();
+      ng.gain.setValueAtTime(0.5, now);
+      ng.gain.exponentialRampToValueAtTime(0.001, now + 0.68);
+      ns.connect(lp).connect(ng).connect(ac.destination);
+      ns.start(now);
+      ns.stop(now + 0.7);
+    }
+  }
+
+  return { playShot, playReload, playHitmarker, playExplosion };
+})();
+
+/* ===== PROCEDURAL CANVAS TEXTURES ===== */
 const TEX_CACHE = {};
 function getArenaTextures(mapId = 'firing_range') {
   if (TEX_CACHE[mapId]) return TEX_CACHE[mapId];
@@ -146,7 +294,7 @@ function getArenaTextures(mapId = 'firing_range') {
   return TEX_CACHE[mapId];
 }
 
-/* ===== DETAILED 3D WEAPON MODEL BUILDER (AR, SMG, SNIPER, SHOTGUN, LAUNCHER) ===== */
+/* ===== DETAILED 3D WEAPON MODEL BUILDER ===== */
 function buildDetailedGun3D(gid, isFpp = false) {
   const it = (typeof ITEMS !== 'undefined' && ITEMS[gid]) ? ITEMS[gid] : { id: 3, r: 'R', cat: 'ar', name: 'M4A1' };
   const rCol = (typeof RAR !== 'undefined' && RAR[it.r]) ? RAR[it.r].c : 0x4aa8ff;
@@ -293,7 +441,7 @@ function buildDetailedGun3D(gid, isFpp = false) {
   return { group: g, magGroup, boltMesh, flash, cat: it.cat };
 }
 
-/* ===== FIRST-PERSON VIEWMODEL (TRUE CENTER ADS + PER-GUN RELOAD & SLIDE TILT) ===== */
+/* ===== FIRST-PERSON VIEWMODEL ===== */
 function createFppViewmodel() {
   const root = new THREE.Group();
   const swayGroup = new THREE.Group();
@@ -318,11 +466,11 @@ function createFppViewmodel() {
 
   const lArm = new THREE.Group();
   const lForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.043, 0.38, 10), sleeveMat);
-  lForearm.rotation.x = Math.PI * 0.38, -0.35, -0.22;
+  lForearm.rotation.set(Math.PI * 0.38, -0.35, -0.22);
   lForearm.position.set(-0.13, -0.13, -0.04);
   lArm.add(lForearm);
   const lWrist = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.034, 0.07, 10), skinMat);
-  lWrist.rotation.x = Math.PI * 0.45, -0.2, 0;
+  lWrist.rotation.set(Math.PI * 0.45, -0.2, 0);
   lWrist.position.set(-0.04, -0.055, 0.14);
   lArm.add(lWrist);
   const lGlove = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.062, 0.09), gloveMat);
@@ -356,7 +504,6 @@ function createFppViewmodel() {
       if (gunObj && gunObj.flash && recoilKick < 0.45) gunObj.flash.visible = false;
     }
 
-    // Centered ADS so sight/optic sits on exact true fire axis (50% screen center)
     const hipX = 0.21, hipY = -0.22, hipZ = -0.44;
     const adsX = 0.00, adsY = -0.118, adsZ = -0.32;
     let px = hipX + (adsX - hipX) * adsLerp;
@@ -372,9 +519,9 @@ function createFppViewmodel() {
 
     swayGroup.position.set(px, py, pz);
     swayGroup.rotation.set(
-      recoilKick * 0.065 - st.slideLerp * 0.08,
+      recoilKick * 0.065 - st.slideLerp * 0.07,
       -0.035 * (1 - adsLerp),
-      st.slideLerp * 0.14 + Math.sin(bobT * 0.5) * bobAmp * 1.2
+      st.slideLerp * 0.12 + Math.sin(bobT * 0.5) * bobAmp * 1.2
     );
 
     if (st.reloading && gunObj) {
@@ -383,7 +530,6 @@ function createFppViewmodel() {
       let tiltZ = 0, tiltX = 0, magDropY = 0, handOffX = 0, handOffY = 0, handOffZ = 0, boltBack = 0;
 
       if (cat === 'shotgun') {
-        // Pump/shell load animation for shotgun
         const shellWave = Math.sin(p * Math.PI);
         tiltZ = -0.25 * shellWave;
         tiltX = 0.34 * shellWave;
@@ -392,7 +538,6 @@ function createFppViewmodel() {
         handOffZ = 0.14 * Math.sin(p * Math.PI * 2);
         boltBack = 0.09 * Math.sin(Math.max(0, (p - 0.65) / 0.35) * Math.PI);
       } else if (cat === 'sniper') {
-        // Sniper magazine swap + bolt cycle
         if (p < 0.35) {
           const k = p / 0.35;
           tiltZ = -0.36 * k;
@@ -409,7 +554,6 @@ function createFppViewmodel() {
           handOffZ = 0.14 * Math.sin(k * Math.PI);
         }
       } else {
-        // Crisp AR / SMG / Launcher magazine eject + fresh mag seat + bolt slap
         if (p < 0.25) {
           const k = p / 0.25;
           tiltZ = -0.44 * k;
@@ -457,7 +601,7 @@ function createFppViewmodel() {
   return { root, setGun, triggerRecoil, update };
 }
 
-/* ===== SHARED 3D TACTICAL SOLDIER AVATAR (SMOOTH CODM SLIDE + PER-GUN RELOAD) ===== */
+/* ===== SHARED 3D TACTICAL SOLDIER AVATAR (CODM FORWARD SLIDE + DEATH FALL ANIMATION) ===== */
 function makeSoldierAvatar(opts = {}) {
   const armorCol = opts.armorCol || 0x2e64b8;
   const tint = opts.tint || null;
@@ -465,6 +609,7 @@ function makeSoldierAvatar(opts = {}) {
   let mix = null, actions = {}, activeAct = null, weaponMount = null, curGunObj = null;
   let lims = null, bones = {}, axes = {}, rHandBone = null, modelRoot = null, hasSkeletal = false;
   let aimPitch = 0, firingPulse = 0, crouchLerp = 0, slideLerp = 0, reloadProg = 0, isReloading = false, weaponCat = 'ar';
+  let deathFall = 0;
 
   function setGun(gid) {
     if (!weaponMount) return;
@@ -507,24 +652,23 @@ function makeSoldierAvatar(opts = {}) {
   function applyRifleHoldPose() {
     if (!hasSkeletal) return;
 
-    // Smooth forward combat slide (low profile, no backward flip/inversion)
-    const dropY = crouchLerp * 0.34 + slideLerp * 0.56;
+    const dropY = crouchLerp * 0.34 + slideLerp * 0.54;
     if (modelRoot) {
       modelRoot.position.y = -dropY;
-      modelRoot.position.z = slideLerp * 0.14;
-      modelRoot.rotation.x = -slideLerp * 0.36;
-      modelRoot.rotation.z = slideLerp * 0.12;
+      modelRoot.position.z = slideLerp * 0.16;
+      modelRoot.rotation.x = -slideLerp * 0.28;
+      modelRoot.rotation.z = slideLerp * 0.08;
     }
 
     if (bones.spine) {
-      bones.spine.rotation.x = crouchLerp * 0.22 + slideLerp * 0.26;
+      bones.spine.rotation.x = crouchLerp * 0.20 + slideLerp * 0.24;
     }
 
-    if (crouchLerp > 0.02 || slideLerp > 0.02) {
-      if (bones.rUpLeg) bones.rUpLeg.rotation.x += crouchLerp * 0.65 + slideLerp * 0.85;
-      if (bones.rLeg) bones.rLeg.rotation.x -= crouchLerp * 1.05 + slideLerp * 0.45;
-      if (bones.lUpLeg) bones.lUpLeg.rotation.x += crouchLerp * 0.65 + slideLerp * 0.35;
-      if (bones.lLeg) bones.lLeg.rotation.x -= crouchLerp * 1.05 + slideLerp * 0.95;
+    if (crouchLerp > 0.01 || slideLerp > 0.01) {
+      if (bones.rUpLeg) bones.rUpLeg.rotation.x += crouchLerp * 0.62 + slideLerp * 0.52;
+      if (bones.rLeg) bones.rLeg.rotation.x -= crouchLerp * 1.02 + slideLerp * 0.68;
+      if (bones.lUpLeg) bones.lUpLeg.rotation.x += crouchLerp * 0.62 - slideLerp * 0.34;
+      if (bones.lLeg) bones.lLeg.rotation.x -= crouchLerp * 1.02 + slideLerp * 0.38;
     }
 
     grp.updateMatrixWorld(true);
@@ -712,12 +856,11 @@ function makeSoldierAvatar(opts = {}) {
       update(dt) {
         const rate = lims.mode === 'Run' ? 12 * lims.speed : lims.mode === 'Walk' ? 7 * lims.speed : 2.2;
         lims.t += dt * rate;
-        const drop = crouchLerp * 0.34 + slideLerp * 0.56;
+        const drop = crouchLerp * 0.34 + slideLerp * 0.54;
         if (slideLerp > 0.05) {
-          // Smooth forward tactical slide stance
-          lims.legL.rotation.x = 0.65 * slideLerp;
-          lims.legR.rotation.x = -0.35 * slideLerp;
-          lims.body.rotation.x = -0.32 * slideLerp;
+          lims.legL.rotation.x = -0.55 * slideLerp;
+          lims.legR.rotation.x = 0.35 * slideLerp;
+          lims.body.rotation.x = 0.24 * slideLerp;
         } else if (lims.mode === 'Run' || lims.mode === 'Walk') {
           const amp = lims.mode === 'Run' ? 0.72 : 0.42;
           lims.legL.rotation.x = Math.sin(lims.t) * amp;
@@ -751,6 +894,13 @@ function makeSoldierAvatar(opts = {}) {
       isReloading = rel;
       reloadProg = relP;
     },
+    setDeathFall(f) {
+      deathFall = Math.max(0, Math.min(1, f));
+      const eased = 1 - Math.pow(1 - deathFall, 2);
+      grp.rotation.x = eased * (Math.PI * 0.48);
+      grp.rotation.z = eased * 0.22;
+      grp.position.y = eased * 0.24;
+    },
     triggerMuzzle() {
       firingPulse = 1.0;
       if (curGunObj && curGunObj.flash) curGunObj.flash.visible = true;
@@ -762,7 +912,7 @@ function makeSoldierAvatar(opts = {}) {
   };
 }
 
-/* ===== WEAPON CONFIGS (INCLUDES ALL CLASSES FOR TESTING: SMG, AR, SNIPER, SHOTGUN, LAUNCHER) ===== */
+/* ===== WEAPON SPECS & CODM GUNSMITH ATTRIBUTES ===== */
 const TEST_WEAPON_POOL = [
   { id: 3, name: 'M4A1 TACTICAL', cat: 'ar', r: 'R' },
   { id: 7, name: 'AK-47 GOLD DRAGON', cat: 'ar', r: 'M' },
@@ -772,7 +922,33 @@ const TEST_WEAPON_POOL = [
   { id: 6, name: 'RPG-7 LAUNCHER', cat: 'launcher', r: 'L' }
 ];
 
-function getWeaponSpec(gunIdOrDef) {
+const GUNSMITH_ATTACHMENTS = {
+  barrel: [
+    { id: 'std_brl', label: 'Standard Barrel', dmg: 0, rng: 0, mob: 0, acc: 0, ctrl: 0 },
+    { id: 'ext_brl', label: 'Ranger Marksman Barrel', dmg: 3, rng: 14, mob: -6, acc: 8, ctrl: 4 },
+    { id: 'sup_brl', label: 'YKM Integral Suppressor', dmg: 0, rng: 6, mob: 2, acc: 5, ctrl: 5, suppressed: true }
+  ],
+  optic: [
+    { id: 'iron', label: 'Iron / Holographic', zoom: 36, acc: 2, mob: 2 },
+    { id: 'rds', label: 'Classic Red Dot Sight', zoom: 30, acc: 6, mob: 0 },
+    { id: 'tac_x3', label: '3x Tactical Scope', zoom: 18, acc: 10, mob: -4 }
+  ],
+  underbarrel: [
+    { id: 'none_ub', label: 'None', ctrl: 0, acc: 0, mob: 0 },
+    { id: 'ranger_fg', label: 'Ranger Foregrip', ctrl: 10, acc: 6, mob: -4 },
+    { id: 'strike_fg', label: 'Strike Foregrip', ctrl: 7, acc: 8, mob: -2 }
+  ],
+  laser: [
+    { id: 'none_ls', label: 'None', acc: 0, mob: 0 },
+    { id: 'owc_tac', label: 'OWC Laser - Tactical', acc: 9, mob: 3, spreadMul: 0.78 }
+  ],
+  grip: [
+    { id: 'std_grp', label: 'Standard Grip', acc: 0, ctrl: 0 },
+    { id: 'gran_grp', label: 'Granulated Grip Tape', acc: 9, ctrl: 6, spreadMul: 0.82 }
+  ]
+};
+
+function getWeaponSpec(gunIdOrDef, loadCfg = null) {
   const def = typeof gunIdOrDef === 'object' && gunIdOrDef !== null ? gunIdOrDef : null;
   const gid = def ? def.id : gunIdOrDef;
   const baseItem = (typeof ITEMS !== 'undefined' && ITEMS[gid]) ? ITEMS[gid] : null;
@@ -780,20 +956,51 @@ function getWeaponSpec(gunIdOrDef) {
   const cat = it.cat || 'ar';
   const r = it.r || 'R';
   const tierMul = { C: 1.0, R: 1.15, E: 1.3, L: 1.48, M: 1.7 }[r] || 1.0;
+
   const base = {
-    smg:      { dmg: 22, rate: 105, mag: 36, res: 144, relMs: 1250, zoom: 42, spread: 0.026, pellets: 1 },
-    ar:       { dmg: 30, rate: 140, mag: 30, res: 120, relMs: 1450, zoom: 36, spread: 0.015, pellets: 1 },
-    sniper:   { dmg: 95, rate: 520, mag: 5,  res: 25,  relMs: 1750, zoom: 16, spread: 0.001, pellets: 1 },
-    shotgun:  { dmg: 18, rate: 480, mag: 8,  res: 32,  relMs: 1650, zoom: 44, spread: 0.072, pellets: 6 },
-    launcher: { dmg: 120,rate: 850, mag: 3,  res: 12,  relMs: 1950, zoom: 34, spread: 0.008, pellets: 1, explosive: true }
-  }[cat] || { dmg: 30, rate: 140, mag: 30, res: 120, relMs: 1450, zoom: 36, spread: 0.015, pellets: 1 };
+    smg:      { dmg: 22, rate: 105, mag: 36, res: 144, relMs: 1250, zoom: 40, spread: 0.025, pellets: 1, speed: 92, drop: 2.2,  stats: { damage: 46, fireRate: 86, accuracy: 62, mobility: 84, range: 44, control: 68 } },
+    ar:       { dmg: 30, rate: 135, mag: 30, res: 120, relMs: 1450, zoom: 34, spread: 0.014, pellets: 1, speed: 115, drop: 3.0,  stats: { damage: 64, fireRate: 72, accuracy: 74, mobility: 70, range: 66, control: 72 } },
+    sniper:   { dmg: 98, rate: 520, mag: 5,  res: 25,  relMs: 1750, zoom: 15, spread: 0.001, pellets: 1, speed: 185, drop: 1.2,  stats: { damage: 95, fireRate: 34, accuracy: 92, mobility: 48, range: 96, control: 58 } },
+    shotgun:  { dmg: 19, rate: 480, mag: 8,  res: 32,  relMs: 1650, zoom: 42, spread: 0.068, pellets: 7, speed: 78,  drop: 7.5,  stats: { damage: 84, fireRate: 42, accuracy: 52, mobility: 72, range: 28, control: 54 } },
+    launcher: { dmg: 125,rate: 850, mag: 3,  res: 12,  relMs: 1950, zoom: 32, spread: 0.006, pellets: 1, speed: 58,  drop: 5.5,  stats: { damage: 99, fireRate: 26, accuracy: 68, mobility: 42, range: 78, control: 48 }, explosive: true }
+  }[cat] || { dmg: 30, rate: 135, mag: 30, res: 120, relMs: 1450, zoom: 34, spread: 0.014, pellets: 1, speed: 115, drop: 3.0, stats: { damage: 64, fireRate: 72, accuracy: 74, mobility: 70, range: 66, control: 72 } };
+
+  const att = loadCfg || {};
+  const brl = GUNSMITH_ATTACHMENTS.barrel.find(x => x.id === att.barrel) || GUNSMITH_ATTACHMENTS.barrel[0];
+  const opt = GUNSMITH_ATTACHMENTS.optic.find(x => x.id === att.optic) || GUNSMITH_ATTACHMENTS.optic[0];
+  const ub  = GUNSMITH_ATTACHMENTS.underbarrel.find(x => x.id === att.underbarrel) || GUNSMITH_ATTACHMENTS.underbarrel[0];
+  const lsr = GUNSMITH_ATTACHMENTS.laser.find(x => x.id === att.laser) || GUNSMITH_ATTACHMENTS.laser[0];
+  const grp = GUNSMITH_ATTACHMENTS.grip.find(x => x.id === att.grip) || GUNSMITH_ATTACHMENTS.grip[0];
+
+  const clamp100 = v => Math.max(10, Math.min(100, Math.round(v)));
+  const finalStats = {
+    damage:   clamp100(base.stats.damage + (brl.dmg || 0) * 2),
+    fireRate: clamp100(base.stats.fireRate),
+    accuracy: clamp100(base.stats.accuracy + (brl.acc || 0) + (opt.acc || 0) + (ub.acc || 0) + (lsr.acc || 0) + (grp.acc || 0)),
+    mobility: clamp100(base.stats.mobility + (brl.mob || 0) + (opt.mob || 0) + (ub.mob || 0) + (lsr.mob || 0)),
+    range:    clamp100(base.stats.range + (brl.rng || 0)),
+    control:  clamp100(base.stats.control + (brl.ctrl || 0) + (ub.ctrl || 0) + (grp.ctrl || 0))
+  };
+
+  const spreadMul = (lsr.spreadMul || 1) * (grp.spreadMul || 1) * (1 - (finalStats.accuracy - 60) * 0.003);
 
   return Object.assign({}, base, {
     id: it.id,
     name: it.name,
     rarity: r,
     cat,
-    dmg: Math.round(base.dmg * tierMul)
+    dmg: Math.round((base.dmg + (brl.dmg || 0)) * tierMul),
+    zoom: (cat === 'sniper') ? base.zoom : (opt.zoom || base.zoom),
+    spread: Math.max(0.0005, base.spread * Math.max(0.45, spreadMul)),
+    suppressed: !!brl.suppressed,
+    stats: finalStats,
+    att: {
+      barrel: brl.id,
+      optic: opt.id,
+      underbarrel: ub.id,
+      laser: lsr.id,
+      grip: grp.id
+    }
   });
 }
 
@@ -882,17 +1089,41 @@ function startMatch(squadId = null) {
   });
 }
 
+/* ===== FULLSCREEN HELPER FOR MOBILE & DESKTOP ===== */
+function toggleArenaFullscreen() {
+  const arenaEl = document.getElementById('arena');
+  const target = arenaEl || document.documentElement;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fsEl) {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    if (arenaEl) arenaEl.classList.remove('mob-fs');
+    return;
+  }
+  if (target.requestFullscreen) {
+    target.requestFullscreen().catch(() => {
+      if (arenaEl) arenaEl.classList.toggle('mob-fs');
+    });
+  } else if (target.webkitRequestFullscreen) {
+    target.webkitRequestFullscreen();
+  } else if (arenaEl) {
+    arenaEl.classList.toggle('mob-fs');
+  }
+}
+
 /* ===== MAIN 3D BATTLE WORLD ENGINE ===== */
 function launchArenaWorld(squadId, mapCfg) {
   const isPC = isPCDevice();
   const safeS = (typeof S === 'object' && S) ? S : { eq: { gun: 3, skin: -1 }, cfg: { gfx: 'High', sens: 100 }, coins: 0, cp: 0, wins: 0 };
   if (!safeS.eq) safeS.eq = { gun: 3, skin: -1 };
   if (!safeS.cfg) safeS.cfg = { gfx: 'High', sens: 100 };
+  if (!safeS.cfg.gunsmith) safeS.cfg.gunsmith = {};
 
-  // Build full weapon testing loadout (equipped primary first, followed by all test weapon types for scroll/loadout)
-  const primarySpec = getWeaponSpec(safeS.eq.gun >= 0 ? safeS.eq.gun : 7);
-  const extraSpecs = TEST_WEAPON_POOL.filter(w => w.id !== primarySpec.id).map(w => getWeaponSpec(w));
-  const weapons = [primarySpec, ...extraSpecs];
+  const primaryBase = getWeaponSpec(safeS.eq.gun >= 0 ? safeS.eq.gun : 7, safeS.cfg.gunsmith[safeS.eq.gun >= 0 ? safeS.eq.gun : 7]);
+  const extraSpecs = TEST_WEAPON_POOL
+    .filter(w => w.id !== primaryBase.id)
+    .map(w => getWeaponSpec(w, safeS.cfg.gunsmith[w.id]));
+  const weapons = [primaryBase, ...extraSpecs];
   const wState = weapons.map(w => ({ ammo: w.mag, reserve: w.res }));
   let wIdx = 0;
 
@@ -907,15 +1138,37 @@ function launchArenaWorld(squadId, mapCfg) {
   const arenaEl = document.createElement('div');
   arenaEl.id = 'arena';
   arenaEl.style.background = '#' + skyHex.toString(16).padStart(6, '0');
-  const hudCfg = Object.assign({ crouch: { x: 85, y: 80, s: 90, o: 90 } }, (typeof defHud === 'function' ? defHud() : {}), safeS.cfg.hud || {});
-  const hStyle = k => {
-    const h = hudCfg[k] || { x: 10, y: 10, s: 100, o: 95 };
-    return `left:${h.x}%;top:${h.y}%;transform:scale(${h.s / 100});opacity:${h.o / 100};${isPC && k !== 'minimap' ? 'display:none;' : ''}`;
+
+  const defaultHudPositions = {
+    minimap: { x: 2, y: 18, s: 100, o: 95 },
+    joy:     { x: 4, y: 68, s: 100, o: 95 },
+    fire:    { x: 84, y: 64, s: 100, o: 95 },
+    scope:   { x: 75, y: 50, s: 90, o: 90 },
+    jump:    { x: 88, y: 46, s: 90, o: 90 },
+    crouch:  { x: 88, y: 31, s: 90, o: 90 },
+    reload:  { x: 76, y: 76, s: 90, o: 90 },
+    grenade: { x: 67, y: 64, s: 88, o: 90 },
+    wswitch: { x: 67, y: 40, s: 88, o: 90 },
+    cam:     { x: 76, y: 24, s: 88, o: 90 },
+    hp:      { x: 1, y: 1, s: 100, o: 95 },
+    ammo:    { x: 16, y: 1, s: 100, o: 95 },
+    sqhud:   { x: 1, y: 12, s: 100, o: 95 },
+    pckeys:  { x: 1, y: 74, s: 100, o: 95 }
+  };
+
+  const hudCfg = Object.assign({}, defaultHudPositions, (typeof defHud === 'function' ? defHud() : {}), safeS.cfg.hud || {});
+  const hStyle = (k, mobileOnly = true) => {
+    const h = hudCfg[k] || defaultHudPositions[k] || { x: 10, y: 10, s: 100, o: 95 };
+    const hideOnPc = mobileOnly && isPC && k !== 'minimap';
+    return `left:${h.x}%;top:${h.y}%;transform:scale(${h.s / 100});opacity:${h.o / 100};${hideOnPc ? 'display:none;' : ''}`;
   };
 
   const pcKeysHtml = isPC ? `
-    <div class="pc-keys">
-      <div class="pk-hdr">⌨️ PC CONTROLS</div>
+    <div class="pc-keys hud-movable" id="ar-pckeys" style="${hStyle('pckeys', false)}">
+      <div class="pk-hdr">
+        <span>⌨️ PC CONTROLS</span>
+        <button class="pk-close" id="ar-pckeys-close" title="Hide Controls">✕</button>
+      </div>
       <div><span class="kcap">W A S D</span> Move · <span class="kcap">SHIFT</span> Sprint · <span class="kcap">SPACE</span> Jump</div>
       <div><span class="kcap">C</span> Tap: Slide · Hold: Crouch</div>
       <div><span class="kcap">LMB</span> Fire (Sniper: Hold=Scope, Release=Shot)</div>
@@ -932,11 +1185,11 @@ function launchArenaWorld(squadId, mapCfg) {
     <div class="ahud">
       <div class="atop">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <div class="hpbar">
+          <div class="hpbar hud-movable" id="ar-hpbox" style="${hStyle('hp', false)}">
             <b id="ar-hp-txt">HP 100 / 100</b>
             <div><i id="ar-hp-bar" style="width:100%"></i></div>
           </div>
-          <div class="ammo">
+          <div class="ammo hud-movable" id="ar-ammobox" style="${hStyle('ammo', false)}">
             <span id="ar-wname" style="font-size:.76rem;color:var(--y)">${esc(weapons[0].name)}</span>
             <span id="ar-ammo">${wState[0].ammo} / ${wState[0].reserve}</span>
             <span id="ar-kills" style="font-size:.76rem;color:#5be58a">KILLS: 0</span>
@@ -944,25 +1197,47 @@ function launchArenaWorld(squadId, mapCfg) {
           <button class="abtn-top loadout-btn" id="ar-loadout-btn" title="CODM Loadout Menu [B]">🎒 LOADOUT</button>
         </div>
         <div class="aright">
+          <button class="abtn-top fs-btn" id="ar-fs-btn" title="Toggle Fullscreen">⛶</button>
           <button class="abtn-top ${(typeof VOICE !== 'undefined' && VOICE.micOn) ? 'on' : 'muted'}" id="ar-mic" title="Toggle Squad Mic" onclick="VOICE.toggleMic()">${(typeof VOICE !== 'undefined' && VOICE.micOn) ? '🎙️' : '🔇'}</button>
           <button class="abtn-top ${(typeof VOICE !== 'undefined' && VOICE.spkOn) ? 'on' : 'muted'}" id="ar-spk" title="Toggle Squad Speaker" onclick="VOICE.toggleSpk()">${(typeof VOICE !== 'undefined' && VOICE.spkOn) ? '🔊' : '🔈'}</button>
           <button class="abtn-top exit" onclick="confirmExitMatch()">🚪 EXIT</button>
         </div>
       </div>
 
-      <div class="loadout-drawer" id="ar-loadout-drawer" style="display:none">
-        <div class="ld-hdr">
-          <span>🎒 CODM TEST LOADOUT (SCROLL WHEEL OR TAP GUN)</span>
-          <button class="ld-close" id="ar-ld-close">✕</button>
+      <div class="codm-gunsmith" id="ar-gunsmith" style="display:none">
+        <div class="gs-top">
+          <div class="gs-title">
+            <span class="gs-badge">MAX</span>
+            <b id="gs-gun-title">${esc(weapons[0].name)}</b>
+            <small id="gs-gun-cat">${weapons[0].cat.toUpperCase()}</small>
+          </div>
+          <div class="gs-tabs" id="gs-gun-tabs"></div>
+          <button class="ld-close" id="ar-gs-close">✕</button>
         </div>
-        <div class="ld-grid" id="ar-ld-grid"></div>
+        <div class="gs-body">
+          <div class="gs-left">
+            <div class="gs-att-row" id="gs-att-top"></div>
+            <div class="gs-preview">
+              <canvas id="gs-gun-cv" width="380" height="150"></canvas>
+              <div class="gs-blueprint-bar">CODM GUNSMITH · REAL BALLISTICS & RECOIL</div>
+            </div>
+            <div class="gs-att-row" id="gs-att-bot"></div>
+          </div>
+          <div class="gs-right">
+            <div class="gs-stats-box" id="gs-stats"></div>
+            <div class="gs-actions">
+              <button class="sm alt" id="gs-reset-att">RESET</button>
+              <button class="sm" id="gs-equip-btn">EQUIP & PLAY</button>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div class="sq-bhud" id="ar-sqhud" style="top:${isPC ? '138px' : '142px'}"></div>
+      <div class="sq-bhud hud-movable" id="ar-sqhud" style="${hStyle('sqhud', false)}"></div>
       ${pcKeysHtml}
       <div class="mfeed" id="ar-feed">${isPC ? '🎯 SCROLL WHEEL: ALL GUNS · SNIPER: HOLD LMB TO SCOPE & RELEASE TO FIRE' : 'MAP: ' + esc(mapCfg.name) + ' · ELIMINATE HOSTILES'}</div>
 
-      <div class="hctrl" style="${hStyle('minimap')}"><canvas id="radar" width="84" height="84"></canvas></div>
+      <div class="hctrl" id="hc-minimap" style="${hStyle('minimap')}"><canvas id="radar" width="84" height="84"></canvas></div>
       <div class="hctrl joy" id="hc-joy" style="${hStyle('joy')}"><div class="knob" id="hc-knob"></div></div>
       <button class="hctrl act fire" id="hc-fire" style="${hStyle('fire')}">🔥</button>
       <button class="hctrl act" id="hc-scope" style="${hStyle('scope')}">🎯</button>
@@ -988,8 +1263,7 @@ function launchArenaWorld(squadId, mapCfg) {
   const xhairEl = document.getElementById('ar-xhair');
   const radarCv = document.getElementById('radar');
   const radarCtx = radarCv ? radarCv.getContext('2d') : null;
-  const loadoutDrawer = document.getElementById('ar-loadout-drawer');
-  const loadoutGrid = document.getElementById('ar-ld-grid');
+  const gunsmithEl = document.getElementById('ar-gunsmith');
 
   function setFeed(msg) {
     if (feedEl) feedEl.textContent = msg;
@@ -1174,6 +1448,7 @@ function launchArenaWorld(squadId, mapCfg) {
   });
   scene.add(playerAv.grp);
 
+  const bullets = [];
   const tracers = [];
   const grenades = [];
   const dustParts = [];
@@ -1182,7 +1457,7 @@ function launchArenaWorld(squadId, mapCfg) {
     const geom = new THREE.BufferGeometry().setFromPoints([from, to]);
     const line = new THREE.Line(geom, new THREE.LineBasicMaterial({ color: col }));
     scene.add(line);
-    tracers.push({ line, life: 0.08 });
+    tracers.push({ line, life: 0.07 });
   }
 
   function spawnDust(x, z) {
@@ -1210,6 +1485,8 @@ function launchArenaWorld(squadId, mapCfg) {
       rotY: 0,
       hp: 100,
       alive: true,
+      dying: false,
+      deathProg: 0,
       respawnT: 0,
       dir: Math.random() * Math.PI * 2,
       strafeT: 1 + Math.random() * 2,
@@ -1219,31 +1496,146 @@ function launchArenaWorld(squadId, mapCfg) {
 
   const remotePeers = {};
 
-  function renderLoadoutCards() {
-    if (!loadoutGrid) return;
-    loadoutGrid.innerHTML = weapons.map((w, idx) => {
-      const active = idx === wIdx ? ' on' : '';
-      return `<button class="ld-card${active}" data-widx="${idx}">
-        <b>${esc(w.name)}</b>
-        <small>${w.cat.toUpperCase()} · ${wState[idx].ammo}/${wState[idx].reserve}</small>
-      </button>`;
-    }).join('');
-    loadoutGrid.querySelectorAll('.ld-card').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const nextIdx = +btn.dataset.widx;
-        switchWeapon(nextIdx);
-        renderLoadoutCards();
-      });
-    });
+  /* ===== CODM-STYLE GUNSMITH DRAWER WITH ATTRIBUTES & ATTACHMENTS ===== */
+  let gsSelectedIdx = 0;
+
+  function drawGunsmithPreview(spec) {
+    const cv = document.getElementById('gs-gun-cv');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const w = cv.width, h = cv.height;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.strokeStyle = 'rgba(148,163,184,0.16)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= w; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y <= h; y += 24) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+    const col = spec.cat === 'sniper' ? '#38bdf8' : spec.cat === 'shotgun' ? '#f59e0b' : spec.cat === 'launcher' ? '#ef4444' : '#f5d300';
+    ctx.save();
+    ctx.translate(w * 0.5, h * 0.55);
+    ctx.strokeStyle = col;
+    ctx.fillStyle = 'rgba(30,41,59,0.92)';
+    ctx.lineWidth = 2;
+
+    if (spec.cat === 'launcher') {
+      ctx.fillRect(-130, -16, 250, 32);
+      ctx.strokeRect(-130, -16, 250, 32);
+      ctx.fillRect(-20, 16, 24, 34);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(-145, -18); ctx.lineTo(-75, -12); ctx.lineTo(-75, 16); ctx.lineTo(-145, 26);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillRect(-75, -18, 105, 34);
+      ctx.strokeRect(-75, -18, 105, 34);
+      const bLen = spec.cat === 'sniper' ? 128 : spec.cat === 'shotgun' ? 92 : 76;
+      ctx.fillRect(30, -9, bLen, 16);
+      ctx.strokeRect(30, -9, bLen, 16);
+      if (spec.suppressed) {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(30 + bLen, -12, 42, 22);
+        ctx.strokeRect(30 + bLen, -12, 42, 22);
+      }
+      if (spec.cat !== 'shotgun') {
+        ctx.save();
+        ctx.translate(-12, 16);
+        ctx.rotate(0.22);
+        ctx.fillStyle = col;
+        ctx.fillRect(-10, 0, 22, spec.cat === 'sniper' ? 28 : 42);
+        ctx.restore();
+      }
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(-35, -32, spec.cat === 'sniper' ? 68 : 34, 14);
+      ctx.strokeRect(-35, -32, spec.cat === 'sniper' ? 68 : 34, 14);
+    }
+    ctx.restore();
   }
 
-  function toggleLoadoutDrawer(forceOpen) {
-    if (!loadoutDrawer) return;
-    const next = typeof forceOpen === 'boolean' ? forceOpen : (loadoutDrawer.style.display === 'none');
-    loadoutDrawer.style.display = next ? 'block' : 'none';
+  function renderGunsmith() {
+    if (!gunsmithEl) return;
+    const spec = weapons[gsSelectedIdx] || weapons[0];
+    const titleEl = document.getElementById('gs-gun-title');
+    const catEl = document.getElementById('gs-gun-cat');
+    const tabsEl = document.getElementById('gs-gun-tabs');
+    const topAttEl = document.getElementById('gs-att-top');
+    const botAttEl = document.getElementById('gs-att-bot');
+    const statsEl = document.getElementById('gs-stats');
+
+    if (titleEl) titleEl.textContent = spec.name;
+    if (catEl) catEl.textContent = spec.cat.toUpperCase() + (spec.id === weapons[wIdx].id ? ' · ACTIVE' : '');
+
+    if (tabsEl) {
+      tabsEl.innerHTML = weapons.map((w, idx) =>
+        `<button class="gs-wtab${idx === gsSelectedIdx ? ' on' : ''}" data-idx="${idx}">${esc(w.cat.toUpperCase())}</button>`
+      ).join('');
+      tabsEl.querySelectorAll('.gs-wtab').forEach(b => {
+        b.addEventListener('click', e => {
+          e.stopPropagation();
+          gsSelectedIdx = +b.dataset.idx;
+          renderGunsmith();
+        });
+      });
+    }
+
+    const renderSlot = (slotKey, slotTitle) => {
+      const list = GUNSMITH_ATTACHMENTS[slotKey];
+      const curId = spec.att[slotKey];
+      const curObj = list.find(x => x.id === curId) || list[0];
+      return `<div class="gs-slot" data-slot="${slotKey}">
+        <span>${slotTitle}</span>
+        <b>${esc(curObj.label)}</b>
+      </div>`;
+    };
+
+    if (topAttEl) {
+      topAttEl.innerHTML = renderSlot('barrel', 'BARREL') + renderSlot('optic', 'OPTIC') + renderSlot('underbarrel', 'UNDERBARREL');
+    }
+    if (botAttEl) {
+      botAttEl.innerHTML = renderSlot('laser', 'LASER') + renderSlot('grip', 'REAR GRIP');
+    }
+
+    gunsmithEl.querySelectorAll('.gs-slot').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        const sKey = el.dataset.slot;
+        const list = GUNSMITH_ATTACHMENTS[sKey];
+        const idx = list.findIndex(x => x.id === spec.att[sKey]);
+        const nextObj = list[(idx + 1) % list.length];
+        safeS.cfg.gunsmith[spec.id] = Object.assign({}, spec.att, { [sKey]: nextObj.id });
+        weapons[gsSelectedIdx] = getWeaponSpec(spec, safeS.cfg.gunsmith[spec.id]);
+        if (typeof save === 'function') save();
+        renderGunsmith();
+      });
+    });
+
+    if (statsEl) {
+      const rows = [
+        ['DAMAGE', spec.stats.damage],
+        ['FIRE RATE', spec.stats.fireRate],
+        ['ACCURACY', spec.stats.accuracy],
+        ['MOBILITY', spec.stats.mobility],
+        ['RANGE', spec.stats.range],
+        ['CONTROL', spec.stats.control]
+      ];
+      statsEl.innerHTML = rows.map(([lbl, val]) => `
+        <div class="gs-srow">
+          <span>${lbl}</span>
+          <div class="gs-bar"><i style="width:${val}%"></i></div>
+          <b>${val}</b>
+        </div>
+      `).join('');
+    }
+
+    drawGunsmithPreview(weapons[gsSelectedIdx]);
+  }
+
+  function toggleGunsmith(forceOpen) {
+    if (!gunsmithEl) return;
+    const next = typeof forceOpen === 'boolean' ? forceOpen : (gunsmithEl.style.display === 'none');
+    gunsmithEl.style.display = next ? 'block' : 'none';
     if (next) {
-      renderLoadoutCards();
+      gsSelectedIdx = wIdx;
+      renderGunsmith();
       if (isPC && document.pointerLockElement === acv) {
         try { document.exitPointerLock(); } catch (e) {}
       }
@@ -1264,7 +1656,6 @@ function launchArenaWorld(squadId, mapCfg) {
     if (xhairEl) xhairEl.style.opacity = (fpp && scoped && !showBlackScope) ? '0' : '1';
     const scBtn = document.getElementById('hc-scope');
     if (scBtn) scBtn.classList.toggle('scoped', scoped);
-    if (loadoutDrawer && loadoutDrawer.style.display !== 'none') renderLoadoutCards();
   }
 
   function toggleScope(forceVal) {
@@ -1296,7 +1687,7 @@ function launchArenaWorld(squadId, mapCfg) {
     reloadStartTs = performance.now();
     reloadDurMs = w.relMs;
     if (scoped) toggleScope(false);
-    if (typeof SFX !== 'undefined' && SFX.reload) SFX.reload();
+    GUN_AUDIO.playReload(w.cat);
     updateHud();
     setFeed(`🔄 RELOADING ${w.name}...`);
     setTimeout(() => {
@@ -1367,7 +1758,7 @@ function launchArenaWorld(squadId, mapCfg) {
     }
     lastShotTs = nowMs;
     st.ammo--;
-    if (typeof SFX !== 'undefined' && SFX.shot) SFX.shot();
+    GUN_AUDIO.playShot(w.cat, w.suppressed);
     playerAv.triggerMuzzle();
     fppVm.triggerRecoil();
     updateHud();
@@ -1382,87 +1773,99 @@ function launchArenaWorld(squadId, mapCfg) {
     const baseDir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)).normalize();
 
     for (let p = 0; p < w.pellets; p++) {
-      const crouchAccuracy = crouching ? 0.72 : 1.0;
-      const sp = (scoped ? w.spread * 0.15 : w.spread) * crouchAccuracy;
+      const crouchAccuracy = crouching ? 0.74 : 1.0;
+      const sp = (scoped ? w.spread * 0.14 : w.spread) * crouchAccuracy;
       const dir = baseDir.clone().add(new THREE.Vector3(
         (Math.random() - 0.5) * sp,
         (Math.random() - 0.5) * sp,
         (Math.random() - 0.5) * sp
       )).normalize();
 
-      let maxDist = 85;
-      for (const c of colliders) {
-        const cx = (c.minX + c.maxX) * 0.5, cz = (c.minZ + c.maxZ) * 0.5;
-        const toBox = new THREE.Vector3(cx - origin.x, 0, cz - origin.z);
-        const proj = toBox.dot(dir);
-        if (proj > 0 && proj < maxDist) {
-          const hitPt = origin.clone().addScaledVector(dir, proj);
-          if (hitPt.x >= c.minX && hitPt.x <= c.maxX && hitPt.z >= c.minZ && hitPt.z <= c.maxZ && hitPt.y <= c.maxY) {
-            maxDist = proj;
-          }
-        }
-      }
+      const startPos = origin.clone().addScaledVector(dir, 0.75);
+      const bMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(w.explosive ? 0.14 : 0.045, 6, 6),
+        new THREE.MeshBasicMaterial({ color: w.explosive ? 0xff5722 : (w.rarity === 'M' ? 0xff2a55 : 0xfef08a) })
+      );
+      bMesh.position.copy(startPos);
+      scene.add(bMesh);
 
-      let hitBot = null, bestD = maxDist;
-      for (const b of bots) {
-        if (!b.alive) continue;
-        const target = new THREE.Vector3(b.x, b.y + 1.15, b.z);
-        const toB = target.clone().sub(origin);
-        const proj = toB.dot(dir);
-        if (proj > 0 && proj < bestD) {
-          const closest = origin.clone().addScaledVector(dir, proj);
-          if (closest.distanceTo(target) < 0.72) {
-            bestD = proj;
-            hitBot = b;
-          }
-        }
-      }
-
-      const endPt = origin.clone().addScaledVector(dir, bestD);
-      spawnTracer(origin.clone().addScaledVector(dir, 0.65), endPt, w.rarity === 'M' ? 0xff2a55 : 0xfef08a);
-
-      if (hitBot) {
-        if (w.explosive) {
-          if (typeof SFX !== 'undefined' && SFX.boom) SFX.boom();
-          bots.forEach(ob => {
-            if (ob.alive && Math.hypot(ob.x - endPt.x, ob.z - endPt.z) < 6.5) damageBot(ob, w.dmg);
-          });
-        } else {
-          damageBot(hitBot, w.dmg);
-        }
-      }
+      bullets.push({
+        mesh: bMesh,
+        pos: startPos,
+        prevPos: startPos.clone(),
+        vel: dir.clone().multiplyScalar(w.speed),
+        gravity: w.drop || 2.5,
+        dmg: w.dmg,
+        explosive: !!w.explosive,
+        tracerColor: w.rarity === 'M' ? 0xff2a55 : 0xfef08a,
+        life: 1.35
+      });
     }
   }
 
   function damageBot(b, amount) {
-    if (!b.alive) return;
+    if (!b.alive || b.dying) return;
     b.hp -= amount;
     if (b.hp <= 0) {
       b.alive = false;
-      b.respawnT = 4.0;
-      b.av.grp.rotation.x = -Math.PI / 2;
-      b.av.grp.position.y = 0.25;
+      b.dying = true;
+      b.deathProg = 0;
+      b.respawnT = 4.2;
       kills++;
       safeS.coins = (safeS.coins || 0) + 8;
       if (typeof addXP === 'function') addXP(15);
-      if (typeof SFX !== 'undefined' && SFX.coin) SFX.coin();
+      GUN_AUDIO.playHitmarker(true);
       updateHud();
       setFeed(`💀 ELIMINATED HOSTILE SOLDIER! (+15 XP · +8 🪙)`);
+    } else {
+      GUN_AUDIO.playHitmarker(false);
     }
   }
 
-  // Loadout drawer UI events
-  const ldBtn = document.getElementById('ar-loadout-btn');
-  const ldClose = document.getElementById('ar-ld-close');
-  if (ldBtn) ldBtn.addEventListener('click', e => { e.stopPropagation(); toggleLoadoutDrawer(); });
-  if (ldClose) ldClose.addEventListener('click', e => { e.stopPropagation(); toggleLoadoutDrawer(false); });
+  const fsBtn = document.getElementById('ar-fs-btn');
+  if (fsBtn) fsBtn.addEventListener('click', e => { e.stopPropagation(); toggleArenaFullscreen(); });
 
-  /* ===== PC MOUSE 360° AIM, SNIPER HOLD-TO-SCOPE & RELEASE-TO-FIRE, WHEEL GUN SWITCH ===== */
+  const ldBtn = document.getElementById('ar-loadout-btn');
+  const gsClose = document.getElementById('ar-gs-close');
+  const gsReset = document.getElementById('gs-reset-att');
+  const gsEquip = document.getElementById('gs-equip-btn');
+  if (ldBtn) ldBtn.addEventListener('click', e => { e.stopPropagation(); toggleGunsmith(); });
+  if (gsClose) gsClose.addEventListener('click', e => { e.stopPropagation(); toggleGunsmith(false); });
+  if (gsReset) {
+    gsReset.addEventListener('click', e => {
+      e.stopPropagation();
+      const spec = weapons[gsSelectedIdx];
+      delete safeS.cfg.gunsmith[spec.id];
+      weapons[gsSelectedIdx] = getWeaponSpec(spec, null);
+      if (typeof save === 'function') save();
+      renderGunsmith();
+    });
+  }
+  if (gsEquip) {
+    gsEquip.addEventListener('click', e => {
+      e.stopPropagation();
+      const chosen = weapons[gsSelectedIdx];
+      safeS.eq.gun = chosen.id;
+      if (typeof save === 'function') save();
+      switchWeapon(gsSelectedIdx);
+      toggleGunsmith(false);
+    });
+  }
+
+  const pcKeysClose = document.getElementById('ar-pckeys-close');
+  if (pcKeysClose) {
+    pcKeysClose.addEventListener('click', e => {
+      e.stopPropagation();
+      const pkEl = document.getElementById('ar-pckeys');
+      if (pkEl) pkEl.style.display = 'none';
+    });
+  }
+
   let cHoldTimer = null, cHeldTriggered = false;
 
   function enterPcAimMode() {
     if (!isPC || !AR || AR.paused) return;
-    if (loadoutDrawer && loadoutDrawer.style.display !== 'none') return;
+    if (gunsmithEl && gunsmithEl.style.display !== 'none') return;
     pcAimMode = true;
     setFeed('🎯 360° AIM MODE — [WHEEL] Switch Gun · [LMB Hold→Release] Sniper Scope/Shot');
     try {
@@ -1499,7 +1902,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
   function onPcMouseDown(e) {
     if (!isPC || !AR || AR.paused) return;
-    if (e.target.closest('button, .modal, .atop, .pc-keys, .loadout-drawer')) return;
+    if (e.target.closest('button, .modal, .atop, .pc-keys, .codm-gunsmith')) return;
 
     if (document.pointerLockElement !== acv) {
       if (e.target === acv) {
@@ -1512,7 +1915,6 @@ function launchArenaWorld(squadId, mapCfg) {
     if (e.button === 0) {
       pcFiring = true;
       if (curCat === 'sniper' || curCat === 'launcher') {
-        // Hold LMB to scope in; releasing LMB fires and exits scope
         toggleScope(true);
       } else {
         fireWeapon();
@@ -1537,7 +1939,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
   function onPcWheel(e) {
     if (!isPC || !AR || AR.paused) return;
-    if (e.target.closest('.modal, .loadout-drawer')) return;
+    if (e.target.closest('.modal, .codm-gunsmith')) return;
     const step = e.deltaY > 0 ? 1 : -1;
     const nextIdx = (wIdx + step + weapons.length) % weapons.length;
     switchWeapon(nextIdx);
@@ -1549,8 +1951,8 @@ function launchArenaWorld(squadId, mapCfg) {
 
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (loadoutDrawer && loadoutDrawer.style.display !== 'none') {
-        toggleLoadoutDrawer(false);
+      if (gunsmithEl && gunsmithEl.style.display !== 'none') {
+        toggleGunsmith(false);
         return;
       }
       const openModal = document.querySelector('.modal');
@@ -1587,7 +1989,7 @@ function launchArenaWorld(squadId, mapCfg) {
     } else if (e.code === 'KeyG') {
       throwGrenade();
     } else if (e.code === 'KeyB') {
-      toggleLoadoutDrawer();
+      toggleGunsmith();
     } else if (e.code === 'KeyQ' || e.code === 'Digit1' || e.code === 'Digit2') {
       switchWeapon(e.code === 'Digit1' ? 0 : e.code === 'Digit2' ? 1 : undefined);
     } else if (e.code === 'KeyV') {
@@ -1621,7 +2023,7 @@ function launchArenaWorld(squadId, mapCfg) {
     enterPcAimMode();
   }
 
-  /* ===== MOBILE TOUCH CONTROLS (WITH SNIPER HOLD-TO-SCOPE & RELEASE-TO-FIRE) ===== */
+  /* ===== MOBILE TOUCH CONTROLS ===== */
   if (!isPC) {
     const joyEl = document.getElementById('hc-joy');
     const knobEl = document.getElementById('hc-knob');
@@ -1810,7 +2212,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
     radarCtx.fillStyle = '#ff2a55';
     bots.forEach(b => {
-      if (!b.alive) return;
+      if (!b.alive && !b.dying) return;
       const pt = toRadar(b.x, b.z);
       radarCtx.beginPath();
       radarCtx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
@@ -1935,6 +2337,65 @@ function launchArenaWorld(squadId, mapCfg) {
         fireWeapon();
       }
 
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const bl = bullets[i];
+        bl.life -= dt;
+        bl.prevPos.copy(bl.pos);
+        bl.vel.y -= bl.gravity * dt;
+        bl.pos.addScaledVector(bl.vel, dt);
+        bl.mesh.position.copy(bl.pos);
+
+        let hitSomething = false;
+        let hitPoint = bl.pos.clone();
+
+        if (bl.pos.y <= 0.05) {
+          hitSomething = true;
+          hitPoint.y = 0.05;
+        }
+
+        if (!hitSomething) {
+          for (const c of colliders) {
+            if (bl.pos.x >= c.minX && bl.pos.x <= c.maxX && bl.pos.z >= c.minZ && bl.pos.z <= c.maxZ && bl.pos.y <= c.maxY) {
+              hitSomething = true;
+              break;
+            }
+          }
+        }
+
+        if (!hitSomething) {
+          for (const b of bots) {
+            if (!b.alive) continue;
+            const center = new THREE.Vector3(b.x, b.y + 1.1, b.z);
+            if (bl.pos.distanceTo(center) < 0.72 || bl.prevPos.distanceTo(center) < 0.65) {
+              hitSomething = true;
+              if (bl.explosive) {
+                GUN_AUDIO.playExplosion();
+                bots.forEach(ob => {
+                  if (ob.alive && Math.hypot(ob.x - hitPoint.x, ob.z - hitPoint.z) < 6.5) damageBot(ob, bl.dmg);
+                });
+              } else {
+                damageBot(b, bl.dmg);
+              }
+              break;
+            }
+          }
+        }
+
+        if (hitSomething && bl.explosive && bl.pos.y <= 0.08) {
+          GUN_AUDIO.playExplosion();
+          bots.forEach(ob => {
+            if (ob.alive && Math.hypot(ob.x - hitPoint.x, ob.z - hitPoint.z) < 6.5) damageBot(ob, bl.dmg);
+          });
+        }
+
+        if (hitSomething || bl.life <= 0) {
+          spawnTracer(bl.prevPos, hitPoint, bl.tracerColor);
+          scene.remove(bl.mesh);
+          bl.mesh.geometry.dispose();
+          bullets.splice(i, 1);
+        }
+      }
+
       const isBlackSniperScope = scoped && (!fpp || curW.cat === 'sniper' || curW.cat === 'launcher');
       const targetFov = scoped ? curW.zoom : (slideLerp > 0.2 ? 68 : 62);
       camera.fov += (targetFov - camera.fov) * 0.25;
@@ -2017,7 +2478,7 @@ function launchArenaWorld(squadId, mapCfg) {
         }
         g.fuse -= dt;
         if (g.fuse <= 0) {
-          if (typeof SFX !== 'undefined' && SFX.boom) SFX.boom();
+          GUN_AUDIO.playExplosion();
           const gx = g.mesh.position.x, gz = g.mesh.position.z;
           bots.forEach(b => {
             if (b.alive && Math.hypot(b.x - gx, b.z - gz) < 7.5) damageBot(b, 130);
@@ -2049,6 +2510,11 @@ function launchArenaWorld(squadId, mapCfg) {
 
       bots.forEach(b => {
         if (!b.alive) {
+          if (b.dying) {
+            b.deathProg = Math.min(1, b.deathProg + dt * 2.4);
+            b.av.setDeathFall(b.deathProg);
+            if (b.deathProg >= 1) b.dying = false;
+          }
           b.respawnT -= dt;
           if (b.respawnT <= 0) {
             const sp = botSpawns[b.id % botSpawns.length];
@@ -2056,7 +2522,9 @@ function launchArenaWorld(squadId, mapCfg) {
             b.z = sp[1];
             b.hp = 100;
             b.alive = true;
-            b.av.grp.rotation.x = 0;
+            b.dying = false;
+            b.deathProg = 0;
+            b.av.setDeathFall(0);
             b.av.grp.position.set(b.x, 0, b.z);
           }
           return;
@@ -2222,7 +2690,7 @@ function exitMatch(claimRewards = false) {
   if (typeof render === 'function') render();
 }
 
-/* ===== CUSTOM HUD LAYOUT EDITOR (SETTINGS -> CUSTOMIZE HUD) ===== */
+/* ===== CODM-STYLE CUSTOM HUD LAYOUT EDITOR (ALL BUTTONS & INFOS MOVABLE/ADJUSTABLE ON DEMAND) ===== */
 function openHudEditor() {
   const keys = [
     ['joy', 'JOYSTICK', 86],
@@ -2234,21 +2702,43 @@ function openHudEditor() {
     ['grenade', 'GRENADE', 46],
     ['wswitch', 'GUN', 50],
     ['cam', 'CAM', 48],
-    ['minimap', 'RADAR', 76]
+    ['minimap', 'RADAR', 76],
+    ['hp', 'HP BAR', 72],
+    ['ammo', 'AMMO HUD', 76],
+    ['sqhud', 'SQUAD HUD', 76],
+    ['pckeys', 'PC KEYS', 74]
   ];
-  const draft = JSON.parse(JSON.stringify(Object.assign({ crouch: { x: 85, y: 80, s: 90, o: 90 } }, defHud(), S.cfg.hud || {})));
+  const baseDefaults = {
+    minimap: { x: 2, y: 18, s: 100, o: 95 },
+    joy:     { x: 4, y: 68, s: 100, o: 95 },
+    fire:    { x: 84, y: 64, s: 100, o: 95 },
+    scope:   { x: 75, y: 50, s: 90, o: 90 },
+    jump:    { x: 88, y: 46, s: 90, o: 90 },
+    crouch:  { x: 88, y: 31, s: 90, o: 90 },
+    reload:  { x: 76, y: 76, s: 90, o: 90 },
+    grenade: { x: 67, y: 64, s: 88, o: 90 },
+    wswitch: { x: 67, y: 40, s: 88, o: 90 },
+    cam:     { x: 76, y: 24, s: 88, o: 90 },
+    hp:      { x: 1, y: 1, s: 100, o: 95 },
+    ammo:    { x: 16, y: 1, s: 100, o: 95 },
+    sqhud:   { x: 1, y: 12, s: 100, o: 95 },
+    pckeys:  { x: 1, y: 74, s: 100, o: 95 }
+  };
+  const draft = JSON.parse(JSON.stringify(Object.assign({}, baseDefaults, (typeof defHud === 'function' ? defHud() : {}), (S.cfg && S.cfg.hud) || {})));
   let sel = 'fire';
 
   const ed = document.createElement('div');
   ed.className = 'hud-ed';
   ed.innerHTML = `
+    <div class="hud-center-line"></div>
     <div class="hud-bar">
       <b style="color:var(--y)">🎛️ CUSTOM HUD</b>
       <span class="s" id="he-lbl">Selected: FIRE</span>
-      <label class="s">Size <input type="range" id="he-s" min="60" max="150" value="${draft[sel].s}" style="width:5.5rem"></label>
-      <label class="s">Alpha <input type="range" id="he-o" min="30" max="100" value="${draft[sel].o}" style="width:5.5rem"></label>
-      <button class="sm alt" id="he-rst">RESET</button>
-      <button class="sm" id="he-save">SAVE & EXIT</button>
+      <label class="s">Size <input type="range" id="he-s" min="55" max="150" value="${draft[sel].s}" style="width:5.2rem"></label>
+      <label class="s">Alpha <input type="range" id="he-o" min="25" max="100" value="${draft[sel].o}" style="width:5.2rem"></label>
+      <button class="sm danger" id="he-rst">RESET</button>
+      <button class="sm alt" id="he-exit">EXIT</button>
+      <button class="sm" id="he-save">SAVE AND USE</button>
     </div>
   `;
   document.body.appendChild(ed);
@@ -2259,7 +2749,8 @@ function openHudEditor() {
   const els = {};
 
   function applyItem(k) {
-    const d = draft[k], el = els[k];
+    const d = draft[k] || baseDefaults[k], el = els[k];
+    if (!d || !el) return;
     el.style.left = d.x + '%';
     el.style.top = d.y + '%';
     el.style.transform = `scale(${d.s / 100})`;
@@ -2268,13 +2759,15 @@ function openHudEditor() {
 
   function selectKey(k) {
     sel = k;
+    if (!draft[sel]) draft[sel] = Object.assign({}, baseDefaults[sel] || { x: 20, y: 20, s: 100, o: 95 });
     Object.keys(els).forEach(x => els[x].classList.toggle('sel', x === k));
     lbl.textContent = 'Selected: ' + k.toUpperCase();
-    sInp.value = draft[k].s;
-    oInp.value = draft[k].o;
+    sInp.value = draft[sel].s;
+    oInp.value = draft[sel].o;
   }
 
   keys.forEach(([k, name, sz]) => {
+    if (!draft[k]) draft[k] = Object.assign({}, baseDefaults[k] || { x: 20, y: 20, s: 100, o: 95 });
     const it = document.createElement('div');
     it.className = 'hud-item' + (k === sel ? ' sel' : '');
     it.style.width = sz + 'px';
@@ -2302,7 +2795,7 @@ function openHudEditor() {
       const w = isPortrait() ? window.innerHeight : window.innerWidth;
       const h = isPortrait() ? window.innerWidth : window.innerHeight;
       draft[k].x = Math.max(0, Math.min(92, Math.round(((p.x - ox) / w) * 100)));
-      draft[k].y = Math.max(8, Math.min(88, Math.round(((p.y - oy) / h) * 100)));
+      draft[k].y = Math.max(6, Math.min(88, Math.round(((p.y - oy) / h) * 100)));
       applyItem(k);
     });
     it.addEventListener('pointerup', () => { dragging = false; });
@@ -2312,10 +2805,11 @@ function openHudEditor() {
   sInp.oninput = () => { draft[sel].s = +sInp.value; applyItem(sel); };
   oInp.oninput = () => { draft[sel].o = +oInp.value; applyItem(sel); };
   document.getElementById('he-rst').onclick = () => {
-    Object.assign(draft, { crouch: { x: 85, y: 80, s: 90, o: 90 } }, defHud());
+    Object.assign(draft, baseDefaults, (typeof defHud === 'function' ? defHud() : {}));
     keys.forEach(([k]) => applyItem(k));
     selectKey(sel);
   };
+  document.getElementById('he-exit').onclick = () => ed.remove();
   document.getElementById('he-save').onclick = () => {
     S.cfg.hud = draft;
     save();
