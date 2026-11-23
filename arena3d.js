@@ -1,4 +1,4 @@
-/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO, GUNSMITH & CODM CUSTOM HUD ===== */
+/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO & CODM GUNSMITH LOADOUT ===== */
 let AR = null;
 
 (function setupSwAutoSync() {
@@ -37,7 +37,7 @@ function resolveSkyHex(rawSky, mapId) {
   return 0x6ea8dc;
 }
 
-/* ===== PROCEDURAL BALLISTIC SOUND ENGINE ===== */
+/* ===== PROCEDURAL BALLISTIC SOUND ENGINE (REAL WEAPON ACOUSTICS PER CLASS) ===== */
 const GUN_AUDIO = (() => {
   let ctx = null, noiseBuf = null;
 
@@ -73,6 +73,7 @@ const GUN_AUDIO = (() => {
       launcher: { punchStart: 95,  punchEnd: 22, punchDur: 0.35, noiseFilter: 1100, noiseDur: 0.48, gain: 0.46 }
     }[cat] || { punchStart: 195, punchEnd: 42, punchDur: 0.14, noiseFilter: 3200, noiseDur: 0.17, gain: 0.36 };
 
+    // Low-end breech punch
     const osc = ac.createOscillator();
     const oscGain = ac.createGain();
     osc.type = cat === 'sniper' || cat === 'shotgun' ? 'sawtooth' : 'triangle';
@@ -84,6 +85,7 @@ const GUN_AUDIO = (() => {
     osc.start(now);
     osc.stop(now + cfg.punchDur + 0.02);
 
+    // High-energy propellant blast & supersonic crack
     if (noiseBuf) {
       const ns = ac.createBufferSource();
       ns.buffer = noiseBuf;
@@ -101,6 +103,7 @@ const GUN_AUDIO = (() => {
       ns.stop(now + cfg.noiseDur + 0.02);
     }
 
+    // Mechanical action/bolt click on sniper & shotgun
     if (cat === 'sniper' || cat === 'shotgun') {
       const boltAt = now + (cat === 'sniper' ? 0.24 : 0.20);
       const bOsc = ac.createOscillator();
@@ -186,7 +189,7 @@ const GUN_AUDIO = (() => {
   return { playShot, playReload, playHitmarker, playExplosion };
 })();
 
-/* ===== PROCEDURAL CANVAS TEXTURES ===== */
+/* ===== PROCEDURAL CANVAS TEXTURES FOR REALISTIC 3D ENVIRONMENT ===== */
 const TEX_CACHE = {};
 function getArenaTextures(mapId = 'firing_range') {
   if (TEX_CACHE[mapId]) return TEX_CACHE[mapId];
@@ -294,7 +297,7 @@ function getArenaTextures(mapId = 'firing_range') {
   return TEX_CACHE[mapId];
 }
 
-/* ===== DETAILED 3D WEAPON MODEL BUILDER ===== */
+/* ===== DETAILED 3D WEAPON MODEL BUILDER (AR, SMG, SNIPER, SHOTGUN, LAUNCHER) ===== */
 function buildDetailedGun3D(gid, isFpp = false) {
   const it = (typeof ITEMS !== 'undefined' && ITEMS[gid]) ? ITEMS[gid] : { id: 3, r: 'R', cat: 'ar', name: 'M4A1' };
   const rCol = (typeof RAR !== 'undefined' && RAR[it.r]) ? RAR[it.r].c : 0x4aa8ff;
@@ -441,7 +444,7 @@ function buildDetailedGun3D(gid, isFpp = false) {
   return { group: g, magGroup, boltMesh, flash, cat: it.cat };
 }
 
-/* ===== FIRST-PERSON VIEWMODEL ===== */
+/* ===== FIRST-PERSON VIEWMODEL (TRUE CENTER ADS + PER-GUN RELOAD & CODM SLIDE) ===== */
 function createFppViewmodel() {
   const root = new THREE.Group();
   const swayGroup = new THREE.Group();
@@ -609,7 +612,7 @@ function makeSoldierAvatar(opts = {}) {
   let mix = null, actions = {}, activeAct = null, weaponMount = null, curGunObj = null;
   let lims = null, bones = {}, axes = {}, rHandBone = null, modelRoot = null, hasSkeletal = false;
   let aimPitch = 0, firingPulse = 0, crouchLerp = 0, slideLerp = 0, reloadProg = 0, isReloading = false, weaponCat = 'ar';
-  let deathFall = 0;
+  let deathFall = 0; // 0 = alive, 0..1 = falling & settling on ground
 
   function setGun(gid) {
     if (!weaponMount) return;
@@ -652,6 +655,8 @@ function makeSoldierAvatar(opts = {}) {
   function applyRifleHoldPose() {
     if (!hasSkeletal) return;
 
+    // Smooth CODM-style low forward combat slide: torso leans slightly forward along travel (-Z),
+    // front knee drives forward and back leg trails smoothly without flipping or clipping into ground.
     const dropY = crouchLerp * 0.34 + slideLerp * 0.54;
     if (modelRoot) {
       modelRoot.position.y = -dropY;
@@ -1448,6 +1453,7 @@ function launchArenaWorld(squadId, mapCfg) {
   });
   scene.add(playerAv.grp);
 
+  // Real physical bullets, tracers, grenades & slide dust
   const bullets = [];
   const tracers = [];
   const grenades = [];
@@ -1506,6 +1512,7 @@ function launchArenaWorld(squadId, mapCfg) {
     const w = cv.width, h = cv.height;
     ctx.clearRect(0, 0, w, h);
 
+    // Tactical blueprint grid
     ctx.strokeStyle = 'rgba(148,163,184,0.16)';
     ctx.lineWidth = 1;
     for (let x = 0; x <= w; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
@@ -1523,11 +1530,14 @@ function launchArenaWorld(squadId, mapCfg) {
       ctx.strokeRect(-130, -16, 250, 32);
       ctx.fillRect(-20, 16, 24, 34);
     } else {
+      // Stock
       ctx.beginPath();
       ctx.moveTo(-145, -18); ctx.lineTo(-75, -12); ctx.lineTo(-75, 16); ctx.lineTo(-145, 26);
       ctx.closePath(); ctx.fill(); ctx.stroke();
+      // Receiver
       ctx.fillRect(-75, -18, 105, 34);
       ctx.strokeRect(-75, -18, 105, 34);
+      // Barrel & Suppressed/Brake tip
       const bLen = spec.cat === 'sniper' ? 128 : spec.cat === 'shotgun' ? 92 : 76;
       ctx.fillRect(30, -9, bLen, 16);
       ctx.strokeRect(30, -9, bLen, 16);
@@ -1536,6 +1546,7 @@ function launchArenaWorld(squadId, mapCfg) {
         ctx.fillRect(30 + bLen, -12, 42, 22);
         ctx.strokeRect(30 + bLen, -12, 42, 22);
       }
+      // Magazine
       if (spec.cat !== 'shotgun') {
         ctx.save();
         ctx.translate(-12, 16);
@@ -1544,6 +1555,7 @@ function launchArenaWorld(squadId, mapCfg) {
         ctx.fillRect(-10, 0, 22, spec.cat === 'sniper' ? 28 : 42);
         ctx.restore();
       }
+      // Optic
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(-35, -32, spec.cat === 'sniper' ? 68 : 34, 14);
       ctx.strokeRect(-35, -32, spec.cat === 'sniper' ? 68 : 34, 14);
@@ -1747,6 +1759,7 @@ function launchArenaWorld(squadId, mapCfg) {
     }
   }
 
+  /* Spawn physical ballistic bullet with velocity & gravity drop */
   function fireWeapon() {
     if (!AR || AR.paused || reloading) return;
     const w = weapons[wIdx], st = wState[wIdx];
@@ -1822,6 +1835,7 @@ function launchArenaWorld(squadId, mapCfg) {
     }
   }
 
+  // Top-right Fullscreen, Gunsmith & PC Controls Close button events
   const fsBtn = document.getElementById('ar-fs-btn');
   if (fsBtn) fsBtn.addEventListener('click', e => { e.stopPropagation(); toggleArenaFullscreen(); });
 
@@ -1861,6 +1875,7 @@ function launchArenaWorld(squadId, mapCfg) {
     });
   }
 
+  /* ===== PC MOUSE 360° AIM, SNIPER HOLD-TO-SCOPE & RELEASE-TO-FIRE, WHEEL GUN SWITCH ===== */
   let cHoldTimer = null, cHeldTriggered = false;
 
   function enterPcAimMode() {
@@ -2337,6 +2352,7 @@ function launchArenaWorld(squadId, mapCfg) {
         fireWeapon();
       }
 
+      // Step physical bullets with gravity, obstacle collision, tracer & bot hit detection
       for (let i = bullets.length - 1; i >= 0; i--) {
         const bl = bullets[i];
         bl.life -= dt;
@@ -2690,7 +2706,7 @@ function exitMatch(claimRewards = false) {
   if (typeof render === 'function') render();
 }
 
-/* ===== CODM-STYLE CUSTOM HUD LAYOUT EDITOR (ALL BUTTONS & INFOS MOVABLE/ADJUSTABLE ON DEMAND) ===== */
+/* ===== CUSTOM HUD LAYOUT EDITOR (EVERY HUD BUTTON & INFO BLOCK MOVABLE/ADJUSTABLE ON DEMAND) ===== */
 function openHudEditor() {
   const keys = [
     ['joy', 'JOYSTICK', 86],
@@ -2730,15 +2746,13 @@ function openHudEditor() {
   const ed = document.createElement('div');
   ed.className = 'hud-ed';
   ed.innerHTML = `
-    <div class="hud-center-line"></div>
     <div class="hud-bar">
-      <b style="color:var(--y)">🎛️ CUSTOM HUD</b>
+      <b style="color:var(--y)">🎛️ CUSTOM HUD (ALL ITEMS)</b>
       <span class="s" id="he-lbl">Selected: FIRE</span>
       <label class="s">Size <input type="range" id="he-s" min="55" max="150" value="${draft[sel].s}" style="width:5.2rem"></label>
       <label class="s">Alpha <input type="range" id="he-o" min="25" max="100" value="${draft[sel].o}" style="width:5.2rem"></label>
-      <button class="sm danger" id="he-rst">RESET</button>
-      <button class="sm alt" id="he-exit">EXIT</button>
-      <button class="sm" id="he-save">SAVE AND USE</button>
+      <button class="sm alt" id="he-rst">RESET</button>
+      <button class="sm" id="he-save">SAVE & EXIT</button>
     </div>
   `;
   document.body.appendChild(ed);
@@ -2809,7 +2823,6 @@ function openHudEditor() {
     keys.forEach(([k]) => applyItem(k));
     selectKey(sel);
   };
-  document.getElementById('he-exit').onclick = () => ed.remove();
   document.getElementById('he-save').onclick = () => {
     S.cfg.hud = draft;
     save();
