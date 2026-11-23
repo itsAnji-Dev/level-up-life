@@ -1,25 +1,30 @@
-/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO, GUNSMITH & PRIVATE 1v1/2v2 ARENA ===== */
+/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO, GUNSMITH & CODM PRIVATE MULTIPLAYER ===== */
 let AR = null;
 
-/* ===== PRIVATE ROOM STATE (1v1 / 2v2) ===== */
+/* ===== CODM PRIVATE MULTIPLAYER STATE ===== */
 const PRIVATE_ROOM = {
   active: false,
+  screenOpen: false,
   roomId: '',
   isHost: false,
-  mode: '1v1', // '1v1' | '2v2'
+  mode: '1v1', // '1v1' | '2v2' | '5v5'
   mapId: 'killhouse_1v1',
   mapName: 'TACTICAL KILLHOUSE 1V1',
+  fillBots: false,
+  myTeam: 'alpha', // 'alpha' | 'bravo'
+  myReady: false,
+  started: false,
   peers: {}
 };
 
 function genPrivateCode() {
-  return 'PVP-' + Math.floor(1000 + Math.random() * 9000);
+  return String(Math.floor(1000000000 + Math.random() * 9000000000));
 }
 
 (function setupSwAutoSync() {
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.addEventListener('message', ev => {
-    if (ev && ev.data && ev.data.type === 'SW_UPDATED' && !AR && !window.__lulSwReloaded) {
+    if (ev && ev.data && ev.data.type === 'SW_UPDATED' && (!AR || AR.isLobby) && !window.__lulSwReloaded) {
       window.__lulSwReloaded = true;
       if (typeof toast === 'function') toast('🔄 Updated to ' + ev.data.version + ' — refreshing...');
       setTimeout(() => window.location.reload(), 250);
@@ -53,7 +58,7 @@ function resolveSkyHex(rawSky, mapId) {
   return 0x6ea8dc;
 }
 
-/* ===== PROCEDURAL BALLISTIC SOUND ENGINE (REAL WEAPON ACOUSTICS PER CLASS) ===== */
+/* ===== PROCEDURAL BALLISTIC SOUND ENGINE ===== */
 const GUN_AUDIO = (() => {
   let ctx = null, noiseBuf = null;
 
@@ -202,7 +207,7 @@ const GUN_AUDIO = (() => {
   return { playShot, playReload, playHitmarker, playExplosion };
 })();
 
-/* ===== PROCEDURAL CANVAS TEXTURES FOR REALISTIC 3D ENVIRONMENT ===== */
+/* ===== PROCEDURAL CANVAS TEXTURES ===== */
 const TEX_CACHE = {};
 function getArenaTextures(mapId = 'firing_range') {
   if (TEX_CACHE[mapId]) return TEX_CACHE[mapId];
@@ -371,7 +376,7 @@ function getArenaTextures(mapId = 'firing_range') {
   return TEX_CACHE[mapId];
 }
 
-/* ===== DETAILED 3D WEAPON MODEL BUILDER (AR, SMG, SNIPER, SHOTGUN, LAUNCHER) ===== */
+/* ===== DETAILED 3D WEAPON MODEL BUILDER ===== */
 function buildDetailedGun3D(gid, isFpp = false) {
   const it = (typeof ITEMS !== 'undefined' && ITEMS[gid]) ? ITEMS[gid] : { id: 3, r: 'R', cat: 'ar', name: 'M4A1' };
   const rCol = (typeof RAR !== 'undefined' && RAR[it.r]) ? RAR[it.r].c : 0x4aa8ff;
@@ -518,7 +523,7 @@ function buildDetailedGun3D(gid, isFpp = false) {
   return { group: g, magGroup, boltMesh, flash, cat: it.cat };
 }
 
-/* ===== FIRST-PERSON VIEWMODEL (TRUE CENTER ADS + PER-GUN RELOAD & CODM SLIDE) ===== */
+/* ===== FIRST-PERSON VIEWMODEL ===== */
 function createFppViewmodel() {
   const root = new THREE.Group();
   const swayGroup = new THREE.Group();
@@ -678,27 +683,46 @@ function createFppViewmodel() {
   return { root, setGun, triggerRecoil, update };
 }
 
-/* ===== SHARED 3D TACTICAL SOLDIER AVATAR (CODM FORWARD SLIDE + DEATH FALL + OVERHEAD TAG) ===== */
+/* ===== CODM-VISIBLE 3D SOLDIER AVATAR WITH OVERHEAD TEAM TAG & SHOULDER BEACON ===== */
 function makeSoldierAvatar(opts = {}) {
   const armorCol = opts.armorCol || 0x2e64b8;
   const tint = opts.tint || null;
+  const teamCol = opts.isEnemy ? 0xff2a55 : 0x38bdf8;
   const grp = new THREE.Group();
   let mix = null, actions = {}, activeAct = null, weaponMount = null, curGunObj = null;
   let lims = null, bones = {}, axes = {}, rHandBone = null, modelRoot = null, hasSkeletal = false;
   let aimPitch = 0, firingPulse = 0, crouchLerp = 0, slideLerp = 0, reloadProg = 0, isReloading = false, weaponCat = 'ar';
   let deathFall = 0;
 
+  // CODM-style glowing shoulder beacon + ground ring for unmistakable player visibility
+  if (opts.showBeacon) {
+    const beacon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.085, 8, 8),
+      new THREE.MeshBasicMaterial({ color: teamCol })
+    );
+    beacon.position.set(-0.24, 1.48, 0);
+    grp.add(beacon);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.42, 0.52, 24),
+      new THREE.MeshBasicMaterial({ color: teamCol, side: THREE.DoubleSide, transparent: true, opacity: 0.72 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.03;
+    grp.add(ring);
+  }
+
   let nameTagSprite = null, tagCtx = null, tagTex = null, lastTagText = '', lastTagHp = -1;
   if (opts.label) {
     const cv = document.createElement('canvas');
-    cv.width = 256;
-    cv.height = 64;
+    cv.width = 320;
+    cv.height = 80;
     tagCtx = cv.getContext('2d');
     tagTex = new THREE.CanvasTexture(cv);
     const spMat = new THREE.SpriteMaterial({ map: tagTex, transparent: true, depthTest: false });
     nameTagSprite = new THREE.Sprite(spMat);
-    nameTagSprite.scale.set(1.65, 0.42, 1);
-    nameTagSprite.position.set(0, 2.25, 0);
+    nameTagSprite.scale.set(2.05, 0.52, 1);
+    nameTagSprite.position.set(0, 2.28, 0);
     grp.add(nameTagSprite);
   }
 
@@ -708,20 +732,34 @@ function makeSoldierAvatar(opts = {}) {
     if (labelText === lastTagText && clampedHp === lastTagHp) return;
     lastTagText = labelText;
     lastTagHp = clampedHp;
-    tagCtx.clearRect(0, 0, 256, 64);
-    tagCtx.fillStyle = 'rgba(8,14,28,0.78)';
-    tagCtx.fillRect(16, 8, 224, 46);
+    tagCtx.clearRect(0, 0, 320, 80);
+
+    // CODM-style angled nameplate
+    tagCtx.fillStyle = 'rgba(6, 12, 26, 0.86)';
+    tagCtx.fillRect(14, 10, 292, 58);
     tagCtx.strokeStyle = opts.isEnemy ? '#ff2a55' : '#38bdf8';
-    tagCtx.lineWidth = 2;
-    tagCtx.strokeRect(16, 8, 224, 46);
+    tagCtx.lineWidth = 3;
+    tagCtx.strokeRect(14, 10, 292, 58);
+
+    // Team badge pill
+    tagCtx.fillStyle = opts.isEnemy ? '#ff2a55' : '#0284c7';
+    tagCtx.fillRect(22, 16, 66, 22);
+    tagCtx.fillStyle = '#ffffff';
+    tagCtx.font = 'bold 13px sans-serif';
+    tagCtx.textAlign = 'center';
+    tagCtx.fillText(opts.isEnemy ? 'BRAVO' : 'ALPHA', 55, 31);
+
+    // Player Name
     tagCtx.fillStyle = '#f8fafc';
     tagCtx.font = 'bold 18px sans-serif';
-    tagCtx.textAlign = 'center';
-    tagCtx.fillText(String(labelText).slice(0, 16), 128, 30);
+    tagCtx.textAlign = 'left';
+    tagCtx.fillText(String(labelText).slice(0, 14), 96, 33);
+
+    // Crisp HP bar
     tagCtx.fillStyle = '#1e293b';
-    tagCtx.fillRect(28, 38, 200, 8);
+    tagCtx.fillRect(22, 46, 276, 12);
     tagCtx.fillStyle = opts.isEnemy ? '#ff2a55' : '#22c55e';
-    tagCtx.fillRect(28, 38, 200 * (clampedHp / 100), 8);
+    tagCtx.fillRect(22, 46, 276 * (clampedHp / 100), 12);
     tagTex.needsUpdate = true;
   }
   if (opts.label) updateTag(opts.label, 100);
@@ -841,7 +879,7 @@ function makeSoldierAvatar(opts = {}) {
   if (typeof GLTF_CACHE !== 'undefined' && GLTF_CACHE && GLTF_CACHE.soldier && THREE.SkeletonUtils) {
     hasSkeletal = true;
     const model = THREE.SkeletonUtils.clone(GLTF_CACHE.soldier.scene);
-    model.scale.setScalar(1.05);
+    model.scale.setScalar(1.06);
     model.updateMatrixWorld(true);
     modelRoot = model;
 
@@ -849,11 +887,11 @@ function makeSoldierAvatar(opts = {}) {
       if (o.isMesh) {
         o.castShadow = true;
         o.receiveShadow = true;
-        if (tint && o.material) {
+        if ((tint || opts.showBeacon) && o.material) {
           o.material = o.material.clone();
           if (o.material.emissive) {
-            o.material.emissive = new THREE.Color(tint);
-            o.material.emissiveIntensity = 0.16;
+            o.material.emissive = new THREE.Color(tint || teamCol);
+            o.material.emissiveIntensity = 0.24;
           }
         }
       }
@@ -922,9 +960,9 @@ function makeSoldierAvatar(opts = {}) {
     applyRifleHoldPose();
   } else {
     const skinMat = new THREE.MeshLambertMaterial({ color: 0xd9a077 });
-    const vestMat = new THREE.MeshLambertMaterial({ color: armorCol });
+    const vestMat = new THREE.MeshLambertMaterial({ color: armorCol, emissive: teamCol, emissiveIntensity: 0.22 });
     const darkMat = new THREE.MeshLambertMaterial({ color: 0x263147 });
-    const visorMat = new THREE.MeshLambertMaterial({ color: tint || 0x38bdf8, emissive: tint || 0x38bdf8, emissiveIntensity: 0.45 });
+    const visorMat = new THREE.MeshLambertMaterial({ color: tint || teamCol, emissive: tint || teamCol, emissiveIntensity: 0.55 });
 
     const body = new THREE.Group();
     grp.add(body);
@@ -1124,8 +1162,8 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
   });
 }
 
-/* ===== PRIVATE ROOM SECTION IN "3D BATTLE MAPS & MODES" SCREEN (1v1 / 2v2 + HIGH-QUALITY BATTLE MAP) ===== */
-(function initPrivateMapSection() {
+/* ===== CODM PRIVATE MULTIPLAYER DEDICATED SLIDE & LIVE SQUAD SYNC ===== */
+(function initCodmPrivateMultiplayer() {
   if (typeof MAPS !== 'undefined' && Array.isArray(MAPS) && !MAPS.some(m => m.id === 'killhouse_1v1')) {
     MAPS.push({
       id: 'killhouse_1v1',
@@ -1142,7 +1180,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         return {
           id: PRIVATE_ROOM.mapId || 'killhouse_1v1',
           name: PRIVATE_ROOM.mapName || ('TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase()),
-          sky: 0x1e2d4a,
+          sky: resolveSkyHex(null, PRIVATE_ROOM.mapId || 'killhouse_1v1'),
           isPrivate: true,
           mode: PRIVATE_ROOM.mode
         };
@@ -1151,322 +1189,559 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     };
   }
 
-  let roomBc = null;
-  try {
-    roomBc = new BroadcastChannel('lul_private_room_sync');
-    roomBc.onmessage = ev => {
-      const d = ev.data;
-      if (!d || !PRIVATE_ROOM.roomId || d.roomId !== PRIVATE_ROOM.roomId) return;
-      if (d.type === 'JOIN_REQ' && PRIVATE_ROOM.isHost) {
-        PRIVATE_ROOM.peers[d.pid] = { pid: d.pid, name: d.name || 'FRIEND', ready: true };
-        broadcastRoomState(false);
-        refreshPrivateView();
-      } else if (d.type === 'ROOM_STATE') {
-        PRIVATE_ROOM.mode = d.mode || PRIVATE_ROOM.mode;
-        PRIVATE_ROOM.mapId = d.mapId || PRIVATE_ROOM.mapId;
-        PRIVATE_ROOM.mapName = d.mapName || PRIVATE_ROOM.mapName;
-        PRIVATE_ROOM.peers = d.peers || PRIVATE_ROOM.peers;
-        refreshPrivateView();
-        if (d.started && !AR && !AR_LOADING) {
-          PRIVATE_ROOM.active = true;
-          startMatch(PRIVATE_ROOM.roomId);
+  function myPlayerInfo() {
+    const pid = (typeof MY_PID !== 'undefined' && MY_PID)
+      ? MY_PID
+      : (window.__pvpPid || (window.__pvpPid = 'P_' + Math.random().toString(36).slice(2, 8)));
+    const name = (typeof S !== 'undefined' && S && S.name) ? S.name : 'OPERATOR';
+    const lvl = (typeof S !== 'undefined' && S && S.lvl) ? S.lvl : 1;
+    const gunId = (typeof S !== 'undefined' && S && S.eq && S.eq.gun >= 0) ? S.eq.gun : 3;
+    return { pid, name, lvl, gunId };
+  }
+
+  // Register a live lobby bridge on AR while the Private Multiplayer slide is open
+  // so the game's built-in syncBattleState() & squadMembers() sync Ready, Team & Start over the network!
+  function enableLobbyNetworkBridge() {
+    if (AR && !AR.isLobby) return;
+    AR = {
+      isLobby: true,
+      paused: 0,
+      getPacket() {
+        const me = myPlayerInfo();
+        return {
+          inMatch: false,
+          privLobby: true,
+          roomId: PRIVATE_ROOM.roomId,
+          mode: PRIVATE_ROOM.mode,
+          mapId: PRIVATE_ROOM.mapId,
+          mapName: PRIVATE_ROOM.mapName,
+          fillBots: PRIVATE_ROOM.fillBots,
+          team: PRIVATE_ROOM.myTeam,
+          ready: PRIVATE_ROOM.myReady,
+          started: PRIVATE_ROOM.started,
+          gunId: me.gunId,
+          lvl: me.lvl,
+          ts: Date.now()
+        };
+      },
+      syncTeammates(members) {
+        ingestSquadMembers(members);
+      },
+      cleanup() {},
+      stats: () => ({ kills: 0, mapName: PRIVATE_ROOM.mapName })
+    };
+  }
+
+  function disableLobbyNetworkBridge() {
+    if (AR && AR.isLobby) {
+      AR = null;
+    }
+  }
+
+  function pushLobbySync() {
+    if (PRIVATE_ROOM.screenOpen) enableLobbyNetworkBridge();
+    if (typeof syncBattleState === 'function' && (PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' && SQUAD_ID))) {
+      try { syncBattleState(); } catch (e) {}
+    }
+  }
+
+  function ingestSquadMembers(members) {
+    if (!Array.isArray(members) || !members.length) return;
+    const me = myPlayerInfo();
+    let hostStarted = false;
+
+    members.forEach((m, idx) => {
+      const b = m.battle || {};
+      const pid = m.pid || (m.me ? me.pid : ('M_' + idx));
+      const isHostMember = !!m.isHost || (PRIVATE_ROOM.isHost && m.me);
+      const team = m.me
+        ? PRIVATE_ROOM.myTeam
+        : (b.team || (isHostMember ? 'alpha' : 'bravo'));
+      const ready = m.me
+        ? PRIVATE_ROOM.myReady
+        : (isHostMember ? true : !!b.ready);
+
+      PRIVATE_ROOM.peers[pid] = {
+        pid,
+        name: m.name || (m.me ? me.name : 'PLAYER'),
+        lvl: b.lvl || (m.me ? me.lvl : 1),
+        isHost: isHostMember,
+        team,
+        ready,
+        speaking: !!m.speaking,
+        gunId: b.gunId != null ? b.gunId : 3
+      };
+
+      if (!m.me && isHostMember) {
+        if (b.mode) PRIVATE_ROOM.mode = b.mode;
+        if (b.mapId) PRIVATE_ROOM.mapId = b.mapId;
+        if (b.mapName) PRIVATE_ROOM.mapName = b.mapName;
+        if (typeof b.fillBots === 'boolean') PRIVATE_ROOM.fillBots = b.fillBots;
+        if (b.started || b.inMatch) {
+          hostStarted = true;
         }
       }
-    };
-  } catch (e) {}
+    });
 
-  function myPlayerInfo() {
-    const pid = (typeof MY_PID !== 'undefined' && MY_PID) ? MY_PID : (window.__pvpPid || (window.__pvpPid = 'P_' + Math.random().toString(36).slice(2, 8)));
-    const name = (typeof S !== 'undefined' && S && S.name) ? S.name : 'OPERATOR';
-    return { pid, name };
-  }
-
-  function broadcastRoomState(started = false) {
-    if (!PRIVATE_ROOM.roomId) return;
-    const payload = {
-      type: 'ROOM_STATE',
-      roomId: PRIVATE_ROOM.roomId,
-      mode: PRIVATE_ROOM.mode,
-      mapId: PRIVATE_ROOM.mapId,
-      mapName: PRIVATE_ROOM.mapName,
-      peers: PRIVATE_ROOM.peers,
-      started
-    };
-    if (roomBc) {
-      try { roomBc.postMessage(payload); } catch (e) {}
+    if (PRIVATE_ROOM.screenOpen) {
+      renderPrivateSlideBody();
     }
-    try {
-      localStorage.setItem('lul_priv_' + PRIVATE_ROOM.roomId, JSON.stringify(payload));
-    } catch (e) {}
-    if (typeof window.db !== 'undefined' && window.db && typeof window.db.ref === 'function') {
-      try {
-        window.db.ref('privateRooms/' + PRIVATE_ROOM.roomId).set(payload);
-      } catch (e) {}
+
+    // Auto-deploy guest into the exact same 3D arena when Host clicks START!
+    if (hostStarted && PRIVATE_ROOM.screenOpen && !AR_LOADING && (!AR || AR.isLobby)) {
+      PRIVATE_ROOM.active = true;
+      PRIVATE_ROOM.started = true;
+      closePrivateSlide(true);
+      startMatch(PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' ? SQUAD_ID : null));
     }
   }
 
-  function createPrivateRoom() {
+  function createRoomNow() {
     const me = myPlayerInfo();
-    const code = genPrivateCode();
+    if (typeof createSquad === 'function') {
+      try { createSquad(); } catch (e) {}
+    }
+    const code = (typeof SQUAD_ID !== 'undefined' && SQUAD_ID) ? String(SQUAD_ID) : genPrivateCode();
+    if (typeof SQUAD_ID !== 'undefined') SQUAD_ID = code;
+
     PRIVATE_ROOM.active = true;
     PRIVATE_ROOM.roomId = code;
     PRIVATE_ROOM.isHost = true;
-    PRIVATE_ROOM.mode = PRIVATE_ROOM.mode || '1v1';
-    PRIVATE_ROOM.mapId = 'killhouse_1v1';
-    PRIVATE_ROOM.mapName = 'TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase();
-    PRIVATE_ROOM.peers = { [me.pid]: { pid: me.pid, name: me.name, isHost: true } };
+    PRIVATE_ROOM.myTeam = 'alpha';
+    PRIVATE_ROOM.myReady = true;
+    PRIVATE_ROOM.started = false;
+    PRIVATE_ROOM.peers = {
+      [me.pid]: {
+        pid: me.pid,
+        name: me.name,
+        lvl: me.lvl,
+        isHost: true,
+        team: 'alpha',
+        ready: true,
+        speaking: false,
+        gunId: me.gunId
+      }
+    };
 
-    if (typeof window.SQUAD_ID !== 'undefined') window.SQUAD_ID = code;
-    if (typeof window.createSquad === 'function') {
-      try { window.createSquad(code); } catch (e) {}
-    }
-    if (typeof window.db !== 'undefined' && window.db && typeof window.db.ref === 'function') {
-      try {
-        window.db.ref('privateRooms/' + code).on('value', snap => {
-          const val = snap && snap.val();
-          if (!val) return;
-          if (val.peers) PRIVATE_ROOM.peers = val.peers;
-          refreshPrivateView();
-        });
-      } catch (e) {}
-    }
-    broadcastRoomState(false);
-    refreshPrivateView();
+    enableLobbyNetworkBridge();
+    pushLobbySync();
+    renderPrivateSlideBody();
     if (typeof toast === 'function') toast('🔒 Private Room Created: ' + code);
   }
 
-  function joinPrivateRoom(rawCode) {
+  function joinRoomNow(rawCode) {
     const code = String(rawCode || '').trim().toUpperCase();
     if (!code) {
-      if (typeof toast === 'function') toast('⚠️ Enter your friend\'s Room Code');
+      if (typeof toast === 'function') toast('⚠️ Enter a Room ID to join');
       return;
     }
     const me = myPlayerInfo();
+
+    // Populate any squad input in the DOM if the host game's joinSquad() reads from it
+    const sqInp = document.getElementById('sq-inp') || document.querySelector('input[placeholder*="code" i], input[placeholder*="squad" i]');
+    if (sqInp) sqInp.value = code;
+
+    if (typeof SQUAD_ID !== 'undefined') SQUAD_ID = code;
+    if (typeof joinSquad === 'function') {
+      try { joinSquad(code); } catch (e) {}
+    }
+
     PRIVATE_ROOM.active = true;
     PRIVATE_ROOM.roomId = code;
     PRIVATE_ROOM.isHost = false;
-    PRIVATE_ROOM.mapId = 'killhouse_1v1';
-    PRIVATE_ROOM.mapName = 'TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase();
-    PRIVATE_ROOM.peers[me.pid] = { pid: me.pid, name: me.name, isHost: false };
+    PRIVATE_ROOM.myTeam = 'bravo';
+    PRIVATE_ROOM.myReady = false;
+    PRIVATE_ROOM.started = false;
+    PRIVATE_ROOM.peers[me.pid] = {
+      pid: me.pid,
+      name: me.name,
+      lvl: me.lvl,
+      isHost: false,
+      team: 'bravo',
+      ready: false,
+      speaking: false,
+      gunId: me.gunId
+    };
 
-    if (typeof window.SQUAD_ID !== 'undefined') window.SQUAD_ID = code;
-    if (typeof window.joinSquad === 'function') {
-      try { window.joinSquad(code); } catch (e) {}
-    }
-    try {
-      const cached = JSON.parse(localStorage.getItem('lul_priv_' + code) || 'null');
-      if (cached && cached.peers) {
-        PRIVATE_ROOM.peers = Object.assign({}, cached.peers, PRIVATE_ROOM.peers);
-        PRIVATE_ROOM.mode = cached.mode || '1v1';
-        PRIVATE_ROOM.mapId = cached.mapId || 'killhouse_1v1';
-      }
-    } catch (e) {}
-
-    if (roomBc) {
-      try { roomBc.postMessage({ type: 'JOIN_REQ', roomId: code, pid: me.pid, name: me.name }); } catch (e) {}
-    }
-    if (typeof window.db !== 'undefined' && window.db && typeof window.db.ref === 'function') {
-      try {
-        window.db.ref('privateRooms/' + code + '/peers/' + me.pid).set({ pid: me.pid, name: me.name, isHost: false });
-        window.db.ref('privateRooms/' + code).on('value', snap => {
-          const val = snap && snap.val();
-          if (!val) return;
-          PRIVATE_ROOM.mode = val.mode || PRIVATE_ROOM.mode;
-          PRIVATE_ROOM.mapId = val.mapId || PRIVATE_ROOM.mapId;
-          PRIVATE_ROOM.mapName = val.mapName || PRIVATE_ROOM.mapName;
-          if (val.peers) PRIVATE_ROOM.peers = val.peers;
-          refreshPrivateView();
-          if (val.started && !AR && !AR_LOADING) {
-            PRIVATE_ROOM.active = true;
-            startMatch(code);
-          }
-        });
-      } catch (e) {}
-    }
-    refreshPrivateView();
+    enableLobbyNetworkBridge();
+    pushLobbySync();
+    setTimeout(pushLobbySync, 350);
+    setTimeout(pushLobbySync, 900);
+    renderPrivateSlideBody();
     if (typeof toast === 'function') toast('🤝 Joined Private Room: ' + code);
   }
 
-  function buildPrivateRightPaneHtml() {
+  function getRosterList() {
     const me = myPlayerInfo();
-    const peerList = Object.values(PRIVATE_ROOM.peers || {});
-    if (!peerList.length) peerList.push({ pid: me.pid, name: me.name, isHost: true });
-    const maxSlots = PRIVATE_ROOM.mode === '2v2' ? 4 : 2;
-    const slotsHtml = Array.from({ length: maxSlots }).map((_, idx) => {
-      const p = peerList[idx];
-      const teamLbl = idx % 2 === 0 ? 'ALPHA TEAM' : 'BRAVO TEAM';
-      const teamCol = idx % 2 === 0 ? '#38bdf8' : '#ff2a55';
+    const list = Object.values(PRIVATE_ROOM.peers || {});
+    if (!list.some(p => p.pid === me.pid)) {
+      list.unshift({
+        pid: me.pid,
+        name: me.name,
+        lvl: me.lvl,
+        isHost: PRIVATE_ROOM.isHost,
+        team: PRIVATE_ROOM.myTeam,
+        ready: PRIVATE_ROOM.myReady,
+        speaking: false,
+        gunId: me.gunId
+      });
+    }
+    return list;
+  }
+
+  function renderSlotCard(player, teamKey, slotIdx) {
+    const isAlpha = teamKey === 'alpha';
+    const teamCol = isAlpha ? '#38bdf8' : '#ff2a55';
+    if (!player) {
       return `
-        <div style="flex:1;min-width:140px;background:rgba(8,14,28,0.92);border:1px solid ${p ? teamCol : 'rgba(148,163,184,0.28)'};border-radius:6px;padding:8px 10px;text-align:left">
-          <div style="font-size:10px;font-weight:800;letter-spacing:.08em;color:${teamCol}">${teamLbl} · SLOT ${idx + 1}</div>
-          <div style="font-size:13px;font-weight:800;color:${p ? '#f8fafc' : '#64748b'};margin-top:3px">
-            ${p ? (esc(p.name) + (p.pid === me.pid ? ' (YOU)' : '')) : 'Waiting for Friend...'}
-          </div>
+        <div class="codm-slot empty" data-team="${teamKey}" title="Click to switch to ${teamKey.toUpperCase()} team" style="width:118px;background:rgba(10,16,30,0.82);border:1px solid rgba(148,163,184,0.28);border-radius:4px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;min-height:138px;transition:border-color .15s">
+          <div style="width:62px;height:62px;border-radius:4px;background:rgba(30,41,59,0.75);display:flex;align-items:center;justify-content:center;font-size:32px;color:#475569">👤</div>
+          <div style="margin-top:8px;font-size:10px;font-weight:800;color:#64748b;letter-spacing:.06em">EMPTY SLOT</div>
+          <div style="margin-top:2px;font-size:9px;color:${teamCol};font-weight:700">+ JOIN ${teamKey.toUpperCase()}</div>
         </div>
       `;
-    }).join('');
+    }
+
+    const readyBadge = player.isHost
+      ? `<span style="background:rgba(250,204,21,0.18);border:1px solid #facc15;color:#facc15;font-size:9px;font-weight:900;padding:2px 6px;border-radius:3px">🏠 HOST</span>`
+      : player.ready
+        ? `<span style="background:rgba(34,197,94,0.2);border:1px solid #22c55e;color:#4ade80;font-size:9px;font-weight:900;padding:2px 6px;border-radius:3px">✅ READY</span>`
+        : `<span style="background:rgba(245,158,11,0.18);border:1px solid #f59e0b;color:#fbbf24;font-size:9px;font-weight:900;padding:2px 6px;border-radius:3px">⏳ NOT READY</span>`;
 
     return `
-      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(56,189,248,0.25);padding-bottom:8px;margin-bottom:10px">
-        <b style="font-size:1.05rem;color:#f8fafc;letter-spacing:.04em">TACTICAL KILLHOUSE (${PRIVATE_ROOM.mode.toUpperCase()})</b>
-        <span style="color:#facc15;font-weight:900;font-size:.82rem;letter-spacing:.06em">🔒 PRIVATE ${PRIVATE_ROOM.mode.toUpperCase()} ARENA</span>
-      </div>
-
-      <div style="background:linear-gradient(180deg,#081022 0%,#0f1c38 100%);border:1px solid rgba(56,189,248,0.38);border-radius:6px;padding:12px;margin-bottom:10px;position:relative">
-        <div style="display:flex;justify-content:space-between;font-size:10px;font-weight:900;letter-spacing:.1em;margin-bottom:6px">
-          <span style="color:#ff2a55">▲ BRAVO SPAWN (FRIEND)</span>
-          <span style="color:#38bdf8">ELEVATED GLASS SNIPER BRIDGE + RAMPS</span>
-          <span style="color:#4ade80">▼ ALPHA SPAWN (YOU)</span>
+      <div class="codm-slot filled" style="width:118px;background:linear-gradient(180deg,rgba(22,33,58,0.95),rgba(10,16,30,0.96));border:2px solid ${player.ready || player.isHost ? teamCol : 'rgba(148,163,184,0.45)'};border-radius:4px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;min-height:138px;box-shadow:0 6px 18px rgba(0,0,0,0.45)">
+        <div style="width:62px;height:62px;border-radius:4px;background:linear-gradient(135deg,${isAlpha ? '#1d4ed8,#0f172a' : '#b91c1c,#0f172a'});border:1px solid ${teamCol};display:flex;align-items:center;justify-content:center;font-size:30px;position:relative">
+          🪖
+          ${player.speaking ? '<span style="position:absolute;bottom:2px;right:2px;font-size:12px">🗣️</span>' : ''}
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:8px;align-items:center;background:rgba(15,23,42,0.75);border:1px solid rgba(148,163,184,0.18);padding:10px;border-radius:4px">
-          <div style="border:1px solid #3b82f6;background:rgba(37,99,235,0.2);padding:6px;text-align:center;font-size:10px;color:#93c5fd;font-weight:800">WEST CONTAINERS<br>(2-STACK PBR)</div>
-          <div style="border:1px solid #38bdf8;background:rgba(56,189,248,0.18);padding:8px;text-align:center;font-size:11px;color:#f8fafc;font-weight:900">CENTER OVERLOOK CATWALK<br><span style="font-size:9px;color:#facc15">WALKABLE RAMPS · BALLISTIC GLASS</span></div>
-          <div style="border:1px solid #f59e0b;background:rgba(217,119,6,0.2);padding:6px;text-align:center;font-size:10px;color:#fcd34d;font-weight:800">EAST CONTAINERS<br>(2-STACK PBR)</div>
+        <div style="margin-top:6px;font-size:11px;font-weight:900;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:106px">
+          ${esc(player.name)}
         </div>
+        <div style="font-size:10px;color:#facc15;font-weight:800;margin-top:1px">⭐ LV ${player.lvl || 1}</div>
+        <div style="margin-top:5px">${readyBadge}</div>
       </div>
-
-      <div style="font-size:11px;color:#94a3b8;letter-spacing:.04em;margin-bottom:10px">
-        HIGH-GRAPHICS SYMMETRICAL 3D KILLHOUSE WITH REAL-TIME SHADOWS, SPAWN BUNKERS, ELEVATED SNIPER BRIDGE &amp; PURE 1V1 / 2V2 PVP.
-      </div>
-
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.88);border:1px solid rgba(56,189,248,0.4);border-radius:6px;padding:10px 12px;margin-bottom:8px">
-        <div>
-          <div style="font-size:10px;font-weight:800;color:#38bdf8;letter-spacing:.08em">PRIVATE ROOM LOBBY</div>
-          <div style="font-size:13px;color:#e2e8f0;margin-top:2px">
-            ${PRIVATE_ROOM.roomId
-              ? `ROOM CODE: <b style="color:#facc15;font-size:15px;letter-spacing:.1em">${esc(PRIVATE_ROOM.roomId)}</b>`
-              : 'Click CREATE ROOM or enter your friend\'s code'}
-          </div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button type="button" class="sm" id="priv-create-btn">➕ CREATE ROOM</button>
-          ${PRIVATE_ROOM.roomId ? `<button type="button" class="sm alt" id="priv-copy-btn">📋 COPY CODE</button>` : ''}
-        </div>
-      </div>
-
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
-        <input type="text" id="priv-code-inp" placeholder="ENTER FRIEND ROOM CODE (E.G. PVP-4829)" value="${esc(PRIVATE_ROOM.roomId)}" style="flex:1;padding:8px 10px;border-radius:4px;border:1px solid rgba(148,163,184,0.35);background:#080e1c;color:#f8fafc;font-weight:800;text-transform:uppercase">
-        <button type="button" class="sm" id="priv-join-btn">🤝 JOIN ROOM</button>
-      </div>
-
-      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.8);padding:8px 10px;border-radius:4px;border:1px solid rgba(148,163,184,0.22);margin-bottom:8px">
-        <span style="font-size:11px;font-weight:800;color:#e2e8f0;letter-spacing:.06em">⚔️ SELECT MATCH MODE:</span>
-        <div style="display:flex;gap:6px">
-          <button type="button" class="sm${PRIVATE_ROOM.mode === '1v1' ? '' : ' alt'}" id="priv-mode-1v1">1v1 DUEL</button>
-          <button type="button" class="sm${PRIVATE_ROOM.mode === '2v2' ? '' : ' alt'}" id="priv-mode-2v2">2v2 CLASH</button>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-        ${slotsHtml}
-      </div>
-
-      <button type="button" id="priv-launch-btn" style="background:#facc15;color:#080e1c;font-weight:900;font-size:13px;letter-spacing:.06em;padding:10px 22px;border:none;border-radius:3px;cursor:pointer;display:inline-flex;align-items:center;gap:8px">
-        ▶ DEPLOY PRIVATE ${PRIVATE_ROOM.mode.toUpperCase()}
-      </button>
     `;
   }
 
-  function bindPrivatePaneEvents(pane) {
-    if (!pane) return;
-    const cBtn = pane.querySelector('#priv-create-btn');
-    const cpBtn = pane.querySelector('#priv-copy-btn');
-    const jBtn = pane.querySelector('#priv-join-btn');
-    const inp = pane.querySelector('#priv-code-inp');
-    const m1 = pane.querySelector('#priv-mode-1v1');
-    const m2 = pane.querySelector('#priv-mode-2v2');
-    const lBtn = pane.querySelector('#priv-launch-btn');
+  function renderPrivateSlideBody() {
+    const screen = document.getElementById('priv-screen');
+    if (!screen) return;
 
-    if (cBtn) cBtn.onclick = e => { e.stopPropagation(); createPrivateRoom(); };
-    if (cpBtn) {
-      cpBtn.onclick = e => {
-        e.stopPropagation();
+    const roster = getRosterList();
+    const alphaPlayers = roster.filter(p => p.team === 'alpha');
+    const bravoPlayers = roster.filter(p => p.team === 'bravo');
+    const slotsPerTeam = PRIVATE_ROOM.mode === '1v1' ? 1 : PRIVATE_ROOM.mode === '2v2' ? 2 : 5;
+
+    const alphaSlotsHtml = Array.from({ length: slotsPerTeam }).map((_, i) => renderSlotCard(alphaPlayers[i], 'alpha', i)).join('');
+    const bravoSlotsHtml = Array.from({ length: slotsPerTeam }).map((_, i) => renderSlotCard(bravoPlayers[i], 'bravo', i)).join('');
+
+    const totalPlayers = roster.length;
+    const readyCount = roster.filter(p => p.isHost || p.ready).length;
+    const micOn = (typeof VOICE !== 'undefined' && VOICE.micOn);
+    const spkOn = (typeof VOICE !== 'undefined' && VOICE.spkOn);
+
+    const mapOptions = [
+      { id: 'killhouse_1v1', label: 'TACTICAL KILLHOUSE 3D' },
+      { id: 'firing_range', label: 'FIRING RANGE' },
+      { id: 'nuketown', label: 'NUKETOWN OPS' },
+      { id: 'standoff', label: 'STANDOFF' },
+      { id: 'shipment', label: 'SHIPMENT 1944' }
+    ];
+
+    screen.innerHTML = `
+      <!-- TOP BAR (CODM PRIVATE MULTIPLAYER) -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(7,12,24,0.94);border-bottom:1px solid rgba(56,189,248,0.28);gap:10px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button type="button" id="pm-back-btn" style="background:rgba(30,41,59,0.9);border:1px solid rgba(148,163,184,0.35);color:#facc15;font-weight:900;font-size:14px;padding:6px 12px;border-radius:3px;cursor:pointer">◀ BACK</button>
+          <span style="font-size:17px;font-weight:900;letter-spacing:.08em;color:#f8fafc">PRIVATE MULTIPLAYER</span>
+          <span style="background:rgba(15,23,42,0.95);border:1px solid #38bdf8;color:#facc15;font-weight:900;font-size:12px;padding:5px 10px;border-radius:3px;letter-spacing:.08em">
+            ROOM ID: ${esc(PRIVATE_ROOM.roomId || 'GENERATING...')}
+          </span>
+          <button type="button" id="pm-copy-btn" style="background:#1e293b;border:1px solid #38bdf8;color:#38bdf8;font-weight:800;font-size:11px;padding:5px 10px;border-radius:3px;cursor:pointer">📋 COPY ID</button>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px">
+          <button type="button" id="pm-mic-btn" title="Toggle Team Mic" style="background:${micOn ? 'rgba(34,197,94,0.22)' : 'rgba(30,41,59,0.9)'};border:1px solid ${micOn ? '#22c55e' : 'rgba(148,163,184,0.35)'};color:#f8fafc;font-size:15px;padding:6px 11px;border-radius:3px;cursor:pointer">
+            ${micOn ? '🎙️ MIC ON' : '🔇 MIC OFF'}
+          </button>
+          <button type="button" id="pm-spk-btn" title="Toggle Team Speaker" style="background:${spkOn ? 'rgba(56,189,248,0.22)' : 'rgba(30,41,59,0.9)'};border:1px solid ${spkOn ? '#38bdf8' : 'rgba(148,163,184,0.35)'};color:#f8fafc;font-size:15px;padding:6px 11px;border-radius:3px;cursor:pointer">
+            ${spkOn ? '🔊 SPK ON' : '🔈 SPK OFF'}
+          </button>
+        </div>
+      </div>
+
+      <!-- MAIN BODY (LEFT MATCH SETTINGS + CENTER TWO-ROW CODM TEAM SLOTS) -->
+      <div style="flex:1;display:grid;grid-template-columns:250px 1fr;gap:14px;padding:14px 16px;overflow-y:auto">
+        <!-- LEFT PANEL: MATCH SETTINGS & JOIN ROOM -->
+        <div style="background:rgba(10,16,30,0.9);border:1px solid rgba(148,163,184,0.25);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:#1e293b;padding:7px 10px;font-weight:900;font-size:12px;letter-spacing:.08em;color:#f8fafc;border-left:3px solid #facc15">
+            MATCH SETTINGS
+          </div>
+
+          <div>
+            <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em;margin-bottom:5px">JOIN FRIEND'S ROOM</div>
+            <div style="display:flex;gap:5px">
+              <input type="text" id="pm-join-inp" placeholder="ENTER ROOM ID" style="flex:1;min-width:0;padding:7px 8px;background:#060b16;border:1px solid rgba(56,189,248,0.45);color:#f8fafc;font-weight:800;font-size:12px;border-radius:3px">
+              <button type="button" id="pm-join-btn" style="background:#38bdf8;color:#080e1c;font-weight:900;font-size:11px;padding:0 10px;border:none;border-radius:3px;cursor:pointer">JOIN</button>
+            </div>
+            <button type="button" id="pm-new-btn" style="width:100%;margin-top:6px;background:rgba(250,204,21,0.14);border:1px solid rgba(250,204,21,0.45);color:#facc15;font-weight:800;font-size:11px;padding:6px;border-radius:3px;cursor:pointer">➕ CREATE NEW ROOM</button>
+          </div>
+
+          <div>
+            <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em;margin-bottom:5px">TEAM SIZE</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px">
+              ${['1v1', '2v2', '5v5'].map(m => `
+                <button type="button" class="pm-mode-btn" data-mode="${m}" style="padding:7px 4px;font-weight:900;font-size:11px;border-radius:3px;cursor:pointer;border:1px solid ${PRIVATE_ROOM.mode === m ? '#facc15' : 'rgba(148,163,184,0.3)'};background:${PRIVATE_ROOM.mode === m ? '#facc15' : '#0f172a'};color:${PRIVATE_ROOM.mode === m ? '#080e1c' : '#e2e8f0'}">
+                  ${m.toUpperCase()}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em;margin-bottom:5px">BATTLE MAP</div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              ${mapOptions.map(mp => `
+                <button type="button" class="pm-map-btn" data-map="${mp.id}" data-name="${mp.label}" style="text-align:left;padding:7px 9px;font-weight:800;font-size:11px;border-radius:3px;cursor:pointer;border:1px solid ${PRIVATE_ROOM.mapId === mp.id ? '#38bdf8' : 'rgba(148,163,184,0.22)'};background:${PRIVATE_ROOM.mapId === mp.id ? 'rgba(56,189,248,0.2)' : '#0f172a'};color:${PRIVATE_ROOM.mapId === mp.id ? '#38bdf8' : '#cbd5e1'}">
+                  ${mp.label}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;background:#0f172a;padding:7px 9px;border-radius:3px;border:1px solid rgba(148,163,184,0.22)">
+            <span style="font-size:11px;font-weight:800;color:#cbd5e1">AI BOTS FILL</span>
+            <button type="button" id="pm-bots-btn" style="padding:4px 10px;font-weight:900;font-size:10px;border-radius:3px;cursor:pointer;border:none;background:${PRIVATE_ROOM.fillBots ? '#22c55e' : '#334155'};color:#fff">
+              ${PRIVATE_ROOM.fillBots ? 'ON' : 'OFF (PVP)'}
+            </button>
+          </div>
+        </div>
+
+        <!-- CENTER CODM TWO-ROW TEAM ROSTER -->
+        <div style="display:flex;flex-direction:column;justify-content:center;gap:18px;padding:6px 10px">
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <span style="font-size:12px;font-weight:900;letter-spacing:.08em;color:#38bdf8">▲ TEAM ALPHA (SOUTH BASE)</span>
+              <span style="font-size:11px;color:#94a3b8">${alphaPlayers.length} / ${slotsPerTeam} PLAYERS</span>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              ${alphaSlotsHtml}
+            </div>
+          </div>
+
+          <div style="height:1px;background:linear-gradient(90deg,transparent,rgba(56,189,248,0.45),transparent)"></div>
+
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <span style="font-size:12px;font-weight:900;letter-spacing:.08em;color:#ff2a55">▼ TEAM BRAVO (NORTH BASE)</span>
+              <span style="font-size:11px;color:#94a3b8">${bravoPlayers.length} / ${slotsPerTeam} PLAYERS</span>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              ${bravoSlotsHtml}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM BAR (LOADOUT, STATUS, READY / START) -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(7,12,24,0.96);border-top:1px solid rgba(148,163,184,0.22);gap:12px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button type="button" id="pm-loadout-btn" style="background:#1e293b;border:1px solid rgba(148,163,184,0.4);color:#f8fafc;font-weight:900;font-size:12px;padding:10px 16px;border-radius:3px;cursor:pointer">🎒 LOADOUT</button>
+          <div style="background:rgba(15,23,42,0.9);border:1px solid rgba(148,163,184,0.22);padding:9px 14px;border-radius:3px;font-size:12px;color:#cbd5e1">
+            <b style="color:#facc15">[ROOM]</b> ${totalPlayers < 2 ? 'Share Room ID with your friend to join...' : `${readyCount}/${totalPlayers} Players Ready for ${PRIVATE_ROOM.mode.toUpperCase()}`}
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="background:rgba(250,204,21,0.15);border:1px solid #facc15;padding:7px 14px;border-radius:3px;text-align:right">
+            <div style="font-size:10px;font-weight:800;color:#facc15">${esc(PRIVATE_ROOM.mapName)}</div>
+            <div style="font-size:13px;font-weight:900;color:#f8fafc">${PRIVATE_ROOM.mode.toUpperCase()} PRIVATE</div>
+          </div>
+
+          ${!PRIVATE_ROOM.isHost ? `
+            <button type="button" id="pm-ready-btn" style="background:${PRIVATE_ROOM.myReady ? '#22c55e' : '#facc15'};color:#080e1c;font-weight:900;font-size:15px;letter-spacing:.06em;padding:12px 28px;border:none;border-radius:3px;cursor:pointer">
+              ${PRIVATE_ROOM.myReady ? '✅ READY!' : '⚡ READY'}
+            </button>
+          ` : `
+            <button type="button" id="pm-start-btn" style="background:#facc15;color:#080e1c;font-weight:900;font-size:15px;letter-spacing:.08em;padding:12px 32px;border:none;border-radius:3px;cursor:pointer;box-shadow:0 0 20px rgba(250,204,21,0.35)">
+              ▶ START (${readyCount}/${totalPlayers})
+            </button>
+          `}
+        </div>
+      </div>
+    `;
+
+    // Bind all Private Multiplayer controls
+    const backBtn = screen.querySelector('#pm-back-btn');
+    if (backBtn) backBtn.onclick = () => closePrivateSlide(false);
+
+    const copyBtn = screen.querySelector('#pm-copy-btn');
+    if (copyBtn) {
+      copyBtn.onclick = () => {
         if (navigator.clipboard && PRIVATE_ROOM.roomId) {
           navigator.clipboard.writeText(PRIVATE_ROOM.roomId).catch(() => {});
         }
-        if (typeof toast === 'function') toast('📋 Copied Room Code: ' + PRIVATE_ROOM.roomId);
+        if (typeof toast === 'function') toast('📋 Copied Room ID: ' + PRIVATE_ROOM.roomId);
       };
     }
-    if (jBtn) jBtn.onclick = e => { e.stopPropagation(); joinPrivateRoom(inp ? inp.value : ''); };
-    if (m1) {
-      m1.onclick = e => {
-        e.stopPropagation();
-        PRIVATE_ROOM.mode = '1v1';
-        PRIVATE_ROOM.mapName = 'TACTICAL KILLHOUSE 1V1';
-        broadcastRoomState(false);
-        refreshPrivateView();
+
+    const micBtn = screen.querySelector('#pm-mic-btn');
+    if (micBtn) {
+      micBtn.onclick = () => {
+        if (typeof VOICE !== 'undefined' && VOICE.toggleMic) VOICE.toggleMic();
+        setTimeout(renderPrivateSlideBody, 80);
       };
     }
-    if (m2) {
-      m2.onclick = e => {
-        e.stopPropagation();
-        PRIVATE_ROOM.mode = '2v2';
-        PRIVATE_ROOM.mapName = 'TACTICAL KILLHOUSE 2V2';
-        broadcastRoomState(false);
-        refreshPrivateView();
+
+    const spkBtn = screen.querySelector('#pm-spk-btn');
+    if (spkBtn) {
+      spkBtn.onclick = () => {
+        if (typeof VOICE !== 'undefined' && VOICE.toggleSpk) VOICE.toggleSpk();
+        setTimeout(renderPrivateSlideBody, 80);
       };
     }
-    if (lBtn) {
-      lBtn.onclick = e => {
-        e.stopPropagation();
-        if (!PRIVATE_ROOM.roomId) createPrivateRoom();
+
+    const joinInp = screen.querySelector('#pm-join-inp');
+    const joinBtn = screen.querySelector('#pm-join-btn');
+    if (joinBtn) {
+      joinBtn.onclick = () => joinRoomNow(joinInp ? joinInp.value : '');
+    }
+
+    const newBtn = screen.querySelector('#pm-new-btn');
+    if (newBtn) newBtn.onclick = () => createRoomNow();
+
+    screen.querySelectorAll('.pm-mode-btn').forEach(btn => {
+      btn.onclick = () => {
+        if (!PRIVATE_ROOM.isHost) return toast('Only the Room Host can change match mode');
+        PRIVATE_ROOM.mode = btn.dataset.mode;
+        PRIVATE_ROOM.mapName = (PRIVATE_ROOM.mapId === 'killhouse_1v1' ? 'TACTICAL KILLHOUSE ' : PRIVATE_ROOM.mapName.split(' ')[0] + ' ') + PRIVATE_ROOM.mode.toUpperCase();
+        pushLobbySync();
+        renderPrivateSlideBody();
+      };
+    });
+
+    screen.querySelectorAll('.pm-map-btn').forEach(btn => {
+      btn.onclick = () => {
+        if (!PRIVATE_ROOM.isHost) return toast('Only the Room Host can change map');
+        PRIVATE_ROOM.mapId = btn.dataset.map;
+        PRIVATE_ROOM.mapName = btn.dataset.name;
+        pushLobbySync();
+        renderPrivateSlideBody();
+      };
+    });
+
+    const botsBtn = screen.querySelector('#pm-bots-btn');
+    if (botsBtn) {
+      botsBtn.onclick = () => {
+        if (!PRIVATE_ROOM.isHost) return toast('Only the Room Host can toggle bots');
+        PRIVATE_ROOM.fillBots = !PRIVATE_ROOM.fillBots;
+        pushLobbySync();
+        renderPrivateSlideBody();
+      };
+    }
+
+    // Click empty slot to switch between Alpha & Bravo team
+    screen.querySelectorAll('.codm-slot.empty').forEach(slot => {
+      slot.onclick = () => {
+        const targetTeam = slot.dataset.team;
+        if (!targetTeam || PRIVATE_ROOM.myTeam === targetTeam) return;
+        PRIVATE_ROOM.myTeam = targetTeam;
+        const me = myPlayerInfo();
+        if (PRIVATE_ROOM.peers[me.pid]) PRIVATE_ROOM.peers[me.pid].team = targetTeam;
+        pushLobbySync();
+        renderPrivateSlideBody();
+      };
+    });
+
+    const loadoutBtn = screen.querySelector('#pm-loadout-btn');
+    if (loadoutBtn) {
+      loadoutBtn.onclick = () => {
+        if (typeof openLoadout === 'function') openLoadout();
+        else if (typeof S !== 'undefined') toast('Current Weapon Equipped — You can also customize Gunsmith [B] in-game!');
+      };
+    }
+
+    const readyBtn = screen.querySelector('#pm-ready-btn');
+    if (readyBtn) {
+      readyBtn.onclick = () => {
+        PRIVATE_ROOM.myReady = !PRIVATE_ROOM.myReady;
+        const me = myPlayerInfo();
+        if (PRIVATE_ROOM.peers[me.pid]) PRIVATE_ROOM.peers[me.pid].ready = PRIVATE_ROOM.myReady;
+        pushLobbySync();
+        renderPrivateSlideBody();
+      };
+    }
+
+    const startBtn = screen.querySelector('#pm-start-btn');
+    if (startBtn) {
+      startBtn.onclick = () => {
         PRIVATE_ROOM.active = true;
-        PRIVATE_ROOM.mapId = 'killhouse_1v1';
-        PRIVATE_ROOM.mapName = 'TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase();
-        broadcastRoomState(true);
-        startMatch(PRIVATE_ROOM.roomId);
+        PRIVATE_ROOM.started = true;
+        pushLobbySync();
+        closePrivateSlide(true);
+        startMatch(PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' ? SQUAD_ID : null));
       };
     }
   }
 
-  function refreshPrivateView() {
-    const rightPane = document.getElementById('priv-right-pane');
-    if (rightPane) {
-      rightPane.innerHTML = buildPrivateRightPaneHtml();
-      bindPrivatePaneEvents(rightPane);
-    }
-    const cardBadge = document.getElementById('priv-card-badge');
-    if (cardBadge) {
-      cardBadge.textContent = PRIVATE_ROOM.active ? 'ACTIVE' : '1V1 / 2V2';
-    }
-  }
+  let lobbyPollTimer = null;
 
-  function setPrivateModeSelected(selected) {
-    PRIVATE_ROOM.active = !!selected;
-    const privCard = document.getElementById('priv-map-card');
-    const privTopBtn = document.getElementById('priv-top-btn');
-    const privRightPane = document.getElementById('priv-right-pane');
-    const pubRightItems = document.querySelectorAll('[data-pub-right="1"]');
-
-    if (privCard) {
-      privCard.style.border = selected ? '2px solid #facc15' : '1px solid rgba(56,189,248,0.45)';
-      privCard.style.background = selected ? 'rgba(250,204,21,0.12)' : 'rgba(15,23,42,0.85)';
-    }
-    if (privTopBtn) {
-      privTopBtn.style.background = selected ? '#facc15' : 'rgba(56,189,248,0.18)';
-      privTopBtn.style.color = selected ? '#080e1c' : '#38bdf8';
-    }
-
-    if (selected) {
-      pubRightItems.forEach(el => { el.style.display = 'none'; });
-      if (privRightPane) {
-        privRightPane.style.display = 'block';
-        refreshPrivateView();
-      }
+  function openPrivateSlide() {
+    PRIVATE_ROOM.active = true;
+    PRIVATE_ROOM.screenOpen = true;
+    if (!PRIVATE_ROOM.roomId) {
+      createRoomNow();
     } else {
-      if (privRightPane) privRightPane.style.display = 'none';
-      pubRightItems.forEach(el => { el.style.display = ''; });
+      enableLobbyNetworkBridge();
+      pushLobbySync();
+    }
+
+    let screen = document.getElementById('priv-screen');
+    if (!screen) {
+      screen = document.createElement('div');
+      screen.id = 'priv-screen';
+      screen.style.cssText = 'position:fixed;inset:0;z-index:9990;background:radial-gradient(circle at 50% 35%,#172544 0%,#070c18 100%);color:#f8fafc;display:flex;flex-direction:column;font-family:inherit;';
+      document.body.appendChild(screen);
+    }
+    screen.style.display = 'flex';
+    renderPrivateSlideBody();
+
+    clearInterval(lobbyPollTimer);
+    lobbyPollTimer = setInterval(() => {
+      if (!PRIVATE_ROOM.screenOpen) {
+        clearInterval(lobbyPollTimer);
+        return;
+      }
+      if (typeof squadMembers === 'function') {
+        try { ingestSquadMembers(squadMembers()); } catch (e) {}
+      }
+      pushLobbySync();
+    }, 600);
+  }
+
+  function closePrivateSlide(launchingMatch = false) {
+    PRIVATE_ROOM.screenOpen = false;
+    clearInterval(lobbyPollTimer);
+    const screen = document.getElementById('priv-screen');
+    if (screen) screen.style.display = 'none';
+    if (!launchingMatch) {
+      PRIVATE_ROOM.active = false;
+      PRIVATE_ROOM.started = false;
+      disableLobbyNetworkBridge();
+    } else {
+      disableLobbyNetworkBridge();
     }
   }
 
-  // Inject directly into the "3D BATTLE MAPS & MODES" full-screen page (#ui)
+  window.openPrivateRoom = openPrivateSlide;
+
+  // Inject button & map card into "3D BATTLE MAPS & MODES" screen
   function injectIntoBattleMapsScreen() {
     const ui = document.getElementById('ui');
     if (!ui) return;
     const upper = (ui.textContent || '').toUpperCase();
     if (!upper.includes('3D BATTLE MAPS')) return;
 
-    // 1. Add "🔒 PRIVATE ROOM (1v1 / 2v2)" button in the top bar next to "3D BATTLE MAPS & MODES"
     if (!document.getElementById('priv-top-btn')) {
       const allNodes = Array.from(ui.querySelectorAll('*'));
       const titleEl = allNodes.find(el => el.children.length === 0 && (el.textContent || '').toUpperCase().includes('3D BATTLE MAPS'));
@@ -1474,17 +1749,16 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         const topBtn = document.createElement('button');
         topBtn.id = 'priv-top-btn';
         topBtn.type = 'button';
-        topBtn.textContent = '🔒 PRIVATE ROOM (1v1 / 2v2)';
-        topBtn.style.cssText = 'margin-left:14px;padding:6px 12px;border-radius:4px;border:1px solid #38bdf8;background:rgba(56,189,248,0.18);color:#38bdf8;font-weight:900;font-size:12px;letter-spacing:.06em;cursor:pointer;';
+        topBtn.textContent = '🔒 PRIVATE MULTIPLAYER (1v1 / 2v2)';
+        topBtn.style.cssText = 'margin-left:14px;padding:6px 12px;border-radius:4px;border:1px solid #facc15;background:rgba(250,204,21,0.16);color:#facc15;font-weight:900;font-size:12px;letter-spacing:.06em;cursor:pointer;';
         topBtn.onclick = e => {
           e.stopPropagation();
-          setPrivateModeSelected(true);
+          openPrivateSlide();
         };
         titleEl.parentElement.appendChild(topBtn);
       }
     }
 
-    // 2. Find the exact left-hand Map List container (which holds FIRING RANGE, NUKETOWN OPS, STANDOFF, SHIPMENT 1944)
     if (!document.getElementById('priv-map-card')) {
       const allEls = Array.from(ui.querySelectorAll('*'));
       const shipmentCard = allEls.find(el => {
@@ -1495,71 +1769,28 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
 
       if (shipmentCard && shipmentCard.parentElement) {
         const mapListCol = shipmentCard.parentElement;
-
-        // Clicking any public map card switches back to public view cleanly
-        Array.from(mapListCol.children).forEach(ch => {
-          ch.addEventListener('click', () => {
-            if (PRIVATE_ROOM.active) setPrivateModeSelected(false);
-          });
-        });
-
         const privCard = document.createElement('div');
         privCard.id = 'priv-map-card';
-        privCard.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 14px;margin-top:6px;border-radius:3px;border:1px solid rgba(56,189,248,0.45);background:rgba(15,23,42,0.85);cursor:pointer;transition:all .15s;';
+        privCard.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 14px;margin-top:6px;border-radius:3px;border:1px solid rgba(250,204,21,0.55);background:rgba(15,23,42,0.9);cursor:pointer;';
         privCard.innerHTML = `
           <div>
-            <div style="font-weight:900;font-size:14px;color:#38bdf8;letter-spacing:.04em">
-              🔒 PRIVATE ROOM <span style="font-size:11px;color:#94a3b8;font-weight:700">(1V1 / 2V2 CUSTOM)</span>
+            <div style="font-weight:900;font-size:14px;color:#facc15;letter-spacing:.04em">
+              🔒 PRIVATE MULTIPLAYER <span style="font-size:11px;color:#38bdf8;font-weight:800">(CODM LOBBY)</span>
             </div>
-            <div style="font-size:11px;color:#cbd5e1;margin-top:2px">TACTICAL KILLHOUSE 3D · PLAY WITH FRIEND</div>
+            <div style="font-size:11px;color:#cbd5e1;margin-top:2px">1V1 / 2V2 CUSTOM ROOM · READY CHECK · VOICE</div>
           </div>
-          <span id="priv-card-badge" style="background:#38bdf8;color:#080e1c;font-weight:900;font-size:11px;padding:5px 10px;border-radius:2px;letter-spacing:.05em">1V1 / 2V2</span>
+          <span style="background:#facc15;color:#080e1c;font-weight:900;font-size:11px;padding:5px 10px;border-radius:2px;letter-spacing:.05em">OPEN LOBBY</span>
         `;
         privCard.onclick = e => {
           e.stopPropagation();
-          setPrivateModeSelected(true);
+          openPrivateSlide();
         };
         mapListCol.appendChild(privCard);
-
-        // 3. Find the Right-Hand Detail Column (sibling of mapListCol that contains "DEPLOY NOW")
-        let rightCol = null;
-        let walker = mapListCol;
-        while (walker && walker !== ui) {
-          const parent = walker.parentElement;
-          if (parent) {
-            const sib = Array.from(parent.children).find(c => c !== walker && (c.textContent || '').toUpperCase().includes('DEPLOY NOW'));
-            if (sib) {
-              rightCol = sib;
-              break;
-            }
-          }
-          walker = parent;
-        }
-
-        if (rightCol && !document.getElementById('priv-right-pane')) {
-          Array.from(rightCol.children).forEach(ch => {
-            ch.dataset.pubRight = '1';
-          });
-          const privRightPane = document.createElement('div');
-          privRightPane.id = 'priv-right-pane';
-          privRightPane.style.cssText = 'display:none;width:100%;';
-          rightCol.appendChild(privRightPane);
-        }
-
-        if (PRIVATE_ROOM.active) {
-          setPrivateModeSelected(true);
-        }
       }
     }
   }
 
-  window.openPrivateRoom = function () {
-    setPrivateModeSelected(true);
-  };
-
-  const obs = new MutationObserver(() => {
-    injectIntoBattleMapsScreen();
-  });
+  const obs = new MutationObserver(() => injectIntoBattleMapsScreen());
   if (document.body) {
     obs.observe(document.body, { childList: true, subtree: true });
     injectIntoBattleMapsScreen();
@@ -1571,16 +1802,17 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
   }
 })();
 
-/* ===== PRE-MATCH DEPLOYMENT LOADING SCREEN + ASSET PRELOADER ===== */
+/* ===== PRE-MATCH DEPLOYMENT LOADING SCREEN ===== */
 let AR_LOADING = false;
 function startMatch(squadId = null) {
-  if (AR || AR_LOADING) return;
+  if ((AR && !AR.isLobby) || AR_LOADING) return;
+  if (AR && AR.isLobby) AR = null;
   if (typeof THREE === 'undefined') return toast('3D Engine unavailable on this browser.');
   AR_LOADING = true;
   if (typeof SFX !== 'undefined' && SFX.deploy) SFX.deploy();
 
   const mapCfg = PRIVATE_ROOM.active
-    ? { id: PRIVATE_ROOM.mapId || 'killhouse_1v1', name: PRIVATE_ROOM.mapName || ('TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase()), sky: 0x1e2d4a, isPrivate: true, mode: PRIVATE_ROOM.mode }
+    ? { id: PRIVATE_ROOM.mapId || 'killhouse_1v1', name: PRIVATE_ROOM.mapName || ('TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase()), sky: resolveSkyHex(null, PRIVATE_ROOM.mapId || 'killhouse_1v1'), isPrivate: true, mode: PRIVATE_ROOM.mode }
     : ((typeof activeMap === 'function') ? activeMap() : { id: 'firing_range', name: 'FIRING RANGE', sky: 0x6ea8dc });
 
   const loadEl = document.createElement('div');
@@ -1659,7 +1891,7 @@ function startMatch(squadId = null) {
   });
 }
 
-/* ===== FULLSCREEN HELPER FOR MOBILE & DESKTOP ===== */
+/* ===== FULLSCREEN HELPER ===== */
 function toggleArenaFullscreen() {
   const arenaEl = document.getElementById('arena');
   const target = arenaEl || document.documentElement;
@@ -1750,7 +1982,7 @@ function launchArenaWorld(squadId, mapCfg) {
     </div>` : '';
 
   const roomBannerHtml = isPrivatePvP
-    ? `<div style="background:rgba(15,23,42,0.88);border:1px solid #38bdf8;color:#f8fafc;padding:4px 10px;border-radius:8px;font-size:.75rem;font-weight:800;letter-spacing:.05em">🔒 ${esc(PRIVATE_ROOM.mode.toUpperCase())} ROOM: <span style="color:#facc15">${esc(PRIVATE_ROOM.roomId)}</span></div>`
+    ? `<div style="background:rgba(15,23,42,0.92);border:1px solid #facc15;color:#f8fafc;padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:900;letter-spacing:.05em">🔒 ${esc(PRIVATE_ROOM.mode.toUpperCase())} · TEAM ${esc(PRIVATE_ROOM.myTeam.toUpperCase())} · ID: <span style="color:#facc15">${esc(PRIVATE_ROOM.roomId)}</span></div>`
     : '';
 
   arenaEl.innerHTML = `
@@ -1863,7 +2095,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(skyHex);
-  scene.fog = new THREE.Fog(skyHex, isKillhouse ? 42 : 36, isKillhouse ? 125 : 115);
+  scene.fog = new THREE.Fog(skyHex, isKillhouse ? 45 : 36, isKillhouse ? 130 : 115);
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.08, 140);
   scene.add(camera);
@@ -1872,8 +2104,8 @@ function launchArenaWorld(squadId, mapCfg) {
   fppVm.setGun(weapons[0].id);
   camera.add(fppVm.root);
 
-  scene.add(new THREE.AmbientLight(0xffffff, isKillhouse ? 0.58 : 0.72));
-  scene.add(new THREE.HemisphereLight(isKillhouse ? 0xbae6fd : 0xf0f9ff, 0x334155, 0.78));
+  scene.add(new THREE.AmbientLight(0xffffff, isKillhouse ? 0.65 : 0.72));
+  scene.add(new THREE.HemisphereLight(isKillhouse ? 0xbae6fd : 0xf0f9ff, 0x334155, 0.82));
   const sun = new THREE.DirectionalLight(isKillhouse ? 0xfff3d6 : 0xfffbeb, 1.08);
   sun.position.set(24, 42, 20);
   if (q !== 'Low') {
@@ -2048,17 +2280,6 @@ function launchArenaWorld(squadId, mapCfg) {
       addBox(bx, 0, bz, 3.8, 1.35, 1.2, { map: tex.wallTex, roughness: 0.7 }, true, true);
       addBox(bx + (bx < 0 ? -1.4 : 1.4), 0, bz + (bz < 0 ? -1.3 : 1.3), 1.3, 1.3, 1.3, { map: tex.crateTex, roughness: 0.8 }, true, true);
     });
-
-    [[-31, -36], [31, -36], [-31, 36], [31, 36]].forEach(([tx, tz]) => {
-      addBox(tx, 0, tz, 0.75, 10.5, 0.75, { color: 0x1e293b, metalness: 0.85, roughness: 0.3 }, true, true);
-      addBox(tx, 10.2, tz, 2.6, 0.9, 1.2, { color: 0x0f172a, metalness: 0.8, roughness: 0.3 }, false, true);
-      const lamp = new THREE.Mesh(
-        new THREE.BoxGeometry(2.2, 0.55, 0.2),
-        new THREE.MeshBasicMaterial({ color: 0xfef9c3 })
-      );
-      lamp.position.set(tx, 10.2, tz + (tz < 0 ? 0.62 : -0.62));
-      scene.add(lamp);
-    });
   } else {
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(110, 110),
@@ -2088,12 +2309,6 @@ function launchArenaWorld(squadId, mapCfg) {
     function buildTacticalBuilding(x, z, w, h, d, tintCol) {
       addBox(x, 0, z, w, h, d, { map: tex.wallTex, color: tintCol });
       addBox(x, h, z, w + 0.5, 0.45, d + 0.5, { color: 0x1e293b }, false);
-      const door = new THREE.Mesh(
-        new THREE.BoxGeometry(1.5, 2.4, 0.25),
-        new THREE.MeshLambertMaterial({ color: 0x0f172a })
-      );
-      door.position.set(x, 1.2, z + (z < 0 ? d / 2 + 0.05 : -d / 2 - 0.05));
-      scene.add(door);
     }
     buildTacticalBuilding(-17, -17, 9.5, 5.6, 8.5, 0xffffff);
     buildTacticalBuilding(17, -17, 9.5, 5.6, 8.5, 0xdbeafe);
@@ -2108,64 +2323,6 @@ function launchArenaWorld(squadId, mapCfg) {
     buildContainer(9.5, 4.5, 2.9, 2.6, 6.4, 0x2563eb);
     buildContainer(-27, 0, 3.2, 2.7, 7.6, 0x0d9488);
     buildContainer(27, 0, 3.2, 2.7, 7.6, 0xd97706);
-
-    function buildWatchtower(x, z) {
-      const legMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
-      [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]].forEach(([lx, lz]) => {
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7.2, 8), legMat);
-        leg.position.set(x + lx, 3.6, z + lz);
-        scene.add(leg);
-      });
-      addBox(x, 6.4, z, 3.6, 0.28, 3.6, { color: 0x475569 }, false);
-      addBox(x, 6.7, z - 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
-      addBox(x, 6.7, z + 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
-      addBox(x, 9.2, z, 4.0, 0.25, 4.0, { color: 0x7c2d12 }, false);
-      addCollider(x, z, 3.0, 3.0, 7.5);
-    }
-    buildWatchtower(-34, -34);
-    buildWatchtower(34, -34);
-
-    function buildSandbagCover(x, z) {
-      const bagMat = new THREE.MeshLambertMaterial({ color: 0xb59e78 });
-      for (let row = 0; row < 3; row++) {
-        for (let col = -2; col <= 2; col++) {
-          const bag = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.36, 0.55), bagMat);
-          bag.position.set(x + col * 0.84 + (row % 2) * 0.15, 0.18 + row * 0.35, z);
-          scene.add(bag);
-        }
-      }
-      addCollider(x, z, 4.4, 0.9, 1.15);
-    }
-    buildSandbagCover(0, -11.5);
-    buildSandbagCover(0, 11.5);
-
-    [[-6.5, 8], [6.5, -8], [-12, -26], [12, 26]].forEach(([cx, cz]) => {
-      addBox(cx, 0, cz, 1.4, 1.4, 1.4, { map: tex.crateTex });
-      addBox(cx + 1.45, 0, cz, 1.2, 1.2, 1.2, { map: tex.crateTex });
-      addBox(cx + 0.6, 1.35, cz, 1.1, 1.1, 1.1, { map: tex.crateTex });
-    });
-
-    function buildTree(x, z, scale = 1) {
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.24 * scale, 0.36 * scale, 2.8 * scale, 8),
-        new THREE.MeshLambertMaterial({ color: 0x5c3e26 })
-      );
-      trunk.position.set(x, 1.4 * scale, z);
-      scene.add(trunk);
-
-      const leafMat = new THREE.MeshLambertMaterial({ color: isDesert ? 0x768745 : 0x34692d });
-      [
-        [0, 3.3 * scale, 0, 1.8 * scale],
-        [-0.7 * scale, 2.8 * scale, 0.4 * scale, 1.3 * scale],
-        [0.75 * scale, 2.9 * scale, -0.3 * scale, 1.35 * scale]
-      ].forEach(([ox, oy, oz, rad]) => {
-        const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(rad, 1), leafMat);
-        crown.position.set(x + ox, oy, z + oz);
-        scene.add(crown);
-      });
-      addCollider(x, z, 0.9 * scale, 0.9 * scale, 3.0 * scale);
-    }
-    [[-38, -14, 1.2], [-38, 18, 1.35], [38, -18, 1.25], [38, 16, 1.15], [-26, 36, 1.3], [26, 36, 1.2]].forEach(t => buildTree(t[0], t[1], t[2]));
   }
 
   const pickups = [];
@@ -2183,8 +2340,9 @@ function launchArenaWorld(squadId, mapCfg) {
     pickups.push({ mesh: m, x: pt[0], z: pt[1], isMed, cd: 0 });
   });
 
-  const spawnIsBravo = isPrivatePvP && !PRIVATE_ROOM.isHost;
-  let px = spawnIsBravo ? -2 : 0;
+  // Spawn Alpha Team on South Bunker (+29) and Bravo Team on North Bunker (-29)
+  const spawnIsBravo = isPrivatePvP && PRIVATE_ROOM.myTeam === 'bravo';
+  let px = spawnIsBravo ? -1.5 : 1.5;
   let py = 0;
   let pz = spawnIsBravo ? -29 : (isKillhouse ? 29 : 28);
   let vy = 0;
@@ -2204,8 +2362,10 @@ function launchArenaWorld(squadId, mapCfg) {
   const processedHits = new Set();
 
   const playerAv = makeSoldierAvatar({
-    armorCol: spawnIsBravo ? 0xdc2626 : ((safeS.eq.skin >= 0 && typeof RAR !== 'undefined' && typeof ITEMS !== 'undefined' && ITEMS[safeS.eq.skin] && RAR[ITEMS[safeS.eq.skin].r]) ? RAR[ITEMS[safeS.eq.skin].r].c : 0x2563eb),
-    gunId: weapons[0].id
+    armorCol: spawnIsBravo ? 0xdc2626 : 0x2563eb,
+    gunId: weapons[0].id,
+    isEnemy: spawnIsBravo,
+    showBeacon: isPrivatePvP
   });
   scene.add(playerAv.grp);
 
@@ -2231,10 +2391,11 @@ function launchArenaWorld(squadId, mapCfg) {
     dustParts.push({ mesh: m, life: 0.35 });
   }
 
-  const botSpawns = isPrivatePvP ? [] : [[-32, -32], [0, -34], [32, -32], [-34, 4], [34, -4], [0, -22]];
+  const spawnBots = !isPrivatePvP || PRIVATE_ROOM.fillBots;
+  const botSpawns = spawnBots ? [[-32, -32], [0, -34], [32, -32], [-34, 4], [34, -4], [0, -22]] : [];
   const bots = botSpawns.map((sp, i) => {
     const gunId = i % 3 === 0 ? 7 : i % 2 === 0 ? 5 : 3;
-    const av = makeSoldierAvatar({ armorCol: 0xdc2626, gunId, tint: 0xff2a55 });
+    const av = makeSoldierAvatar({ armorCol: 0xdc2626, gunId, tint: 0xff2a55, label: 'BOT ' + (i + 1), isEnemy: true, showBeacon: true });
     av.grp.position.set(sp[0], 0, sp[1]);
     scene.add(av.grp);
     return {
@@ -2262,11 +2423,11 @@ function launchArenaWorld(squadId, mapCfg) {
     py = 0;
     vy = 0;
     if (spawnIsBravo) {
-      px = -2;
+      px = -1.5;
       pz = -29;
       yaw = Math.PI;
     } else {
-      px = 0;
+      px = 1.5;
       pz = isKillhouse ? 29 : 28;
       yaw = 0;
     }
@@ -2284,7 +2445,7 @@ function launchArenaWorld(squadId, mapCfg) {
     }
   }
 
-  /* ===== CODM-STYLE GUNSMITH DRAWER WITH ATTRIBUTES & ATTACHMENTS ===== */
+  /* ===== CODM GUNSMITH ===== */
   let gsSelectedIdx = 0;
 
   function drawGunsmithPreview(spec) {
@@ -2692,6 +2853,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
   function damageRemotePeer(pid, rp, amount) {
     if (!isPrivatePvP || !rp) return;
+    if (rp.team === PRIVATE_ROOM.myTeam) return; // No friendly fire
     hitCounter++;
     pendingHit = { targetPid: pid, dmg: amount, seq: hitCounter, ts: Date.now() };
     rp.hp = Math.max(0, (rp.hp || 100) - amount);
@@ -2749,7 +2911,7 @@ function launchArenaWorld(squadId, mapCfg) {
     });
   }
 
-  /* ===== PC MOUSE 360° AIM, SNIPER HOLD-TO-SCOPE & RELEASE-TO-FIRE, WHEEL GUN SWITCH ===== */
+  /* ===== PC MOUSE 360° AIM ===== */
   let cHoldTimer = null, cHeldTriggered = false;
 
   function enterPcAimMode() {
@@ -2794,9 +2956,7 @@ function launchArenaWorld(squadId, mapCfg) {
     if (e.target.closest('button, .modal, .atop, .pc-keys, .codm-gunsmith')) return;
 
     if (document.pointerLockElement !== acv) {
-      if (e.target === acv) {
-        enterPcAimMode();
-      }
+      if (e.target === acv) enterPcAimMode();
       return;
     }
 
@@ -3052,8 +3212,10 @@ function launchArenaWorld(squadId, mapCfg) {
     if (hud) {
       hud.innerHTML = members.map(m => {
         const mHp = m.me ? Math.max(0, Math.ceil(hp)) : (m.battle && typeof m.battle.hp === 'number' ? m.battle.hp : 100);
-        return `<div class="sq-bitem${m.isHost ? ' host' : ''}">
-          <div><b>${m.speaking ? '🗣️ ' : ''}${esc(m.name)}</b><div class="bhp"><i style="width:${mHp}%"></i></div></div>
+        const mTeam = m.me ? PRIVATE_ROOM.myTeam : ((m.battle && m.battle.team) || 'bravo');
+        const tCol = mTeam === 'bravo' ? '#ff2a55' : '#38bdf8';
+        return `<div class="sq-bitem${m.isHost ? ' host' : ''}" style="border-left:3px solid ${tCol}">
+          <div><b>${m.speaking ? '🗣️ ' : ''}${esc(m.name)}</b><div class="bhp"><i style="width:${mHp}%;background:${tCol}"></i></div></div>
           <span>${mHp} HP</span>
         </div>`;
       }).join('');
@@ -3062,7 +3224,7 @@ function launchArenaWorld(squadId, mapCfg) {
     const myPid = (typeof MY_PID !== 'undefined' && MY_PID) ? MY_PID : (window.__pvpPid || '');
     const activePids = new Set();
     members.forEach(m => {
-      if (m.me || !m.battle || !m.battle.inMatch) return;
+      if (m.me || !m.battle) return;
       activePids.add(m.pid);
 
       if (isPrivatePvP && m.battle.hit && m.battle.hit.targetPid === myPid) {
@@ -3073,34 +3235,40 @@ function launchArenaWorld(squadId, mapCfg) {
         }
       }
 
+      const peerTeam = m.battle.team || 'bravo';
+      const isEnemyPeer = isPrivatePvP ? (peerTeam !== PRIVATE_ROOM.myTeam) : false;
+
       let rp = remotePeers[m.pid];
       if (!rp) {
         const av = makeSoldierAvatar({
-          armorCol: isPrivatePvP ? 0xdc2626 : 0x38bdf8,
+          armorCol: isEnemyPeer ? 0xdc2626 : 0x2563eb,
           gunId: m.battle.gunId || 3,
-          tint: isPrivatePvP ? 0xff2a55 : 0x4ade80,
+          tint: isEnemyPeer ? 0xff2a55 : 0x38bdf8,
           label: m.name || 'PLAYER',
-          isEnemy: isPrivatePvP
+          isEnemy: isEnemyPeer,
+          showBeacon: true
         });
         scene.add(av.grp);
         rp = remotePeers[m.pid] = {
           av,
           name: m.name || 'PLAYER',
+          team: peerTeam,
           hp: typeof m.battle.hp === 'number' ? m.battle.hp : 100,
-          tx: m.battle.x || 0,
+          tx: m.battle.x != null ? m.battle.x : (peerTeam === 'bravo' ? -1.5 : 1.5),
           ty: m.battle.y || 0,
-          tz: m.battle.z || (isKillhouse ? -29 : 26),
-          try: m.battle.ry || 0,
+          tz: m.battle.z != null ? m.battle.z : (peerTeam === 'bravo' ? -29 : 29),
+          try: m.battle.ry != null ? m.battle.ry : (peerTeam === 'bravo' ? Math.PI : 0),
           anim: m.battle.anim || 'Idle'
         };
       }
       rp.name = m.name || rp.name;
+      rp.team = peerTeam;
       if (typeof m.battle.hp === 'number') rp.hp = m.battle.hp;
       rp.av.updateTag(rp.name, rp.hp);
-      rp.tx = m.battle.x || 0;
-      rp.ty = m.battle.y || 0;
-      rp.tz = m.battle.z || (isKillhouse ? -29 : 26);
-      rp.try = m.battle.ry || 0;
+      if (m.battle.x != null) rp.tx = m.battle.x;
+      if (m.battle.y != null) rp.ty = m.battle.y;
+      if (m.battle.z != null) rp.tz = m.battle.z;
+      if (m.battle.ry != null) rp.try = m.battle.ry;
       rp.anim = m.battle.anim || 'Idle';
       if (m.battle.gunId != null) rp.av.setGun(m.battle.gunId);
     });
@@ -3146,11 +3314,11 @@ function launchArenaWorld(squadId, mapCfg) {
       radarCtx.fill();
     });
 
-    radarCtx.fillStyle = isPrivatePvP ? '#ff2a55' : '#4ade80';
     Object.values(remotePeers).forEach(rp => {
+      radarCtx.fillStyle = (isPrivatePvP && rp.team !== PRIVATE_ROOM.myTeam) ? '#ff2a55' : '#4ade80';
       const pt = toRadar(rp.av.grp.position.x, rp.av.grp.position.z);
       radarCtx.beginPath();
-      radarCtx.arc(pt.x, pt.y, 3.2, 0, Math.PI * 2);
+      radarCtx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
       radarCtx.fill();
     });
 
@@ -3539,16 +3707,17 @@ function launchArenaWorld(squadId, mapCfg) {
 
       Object.values(remotePeers).forEach(rp => {
         const stepD = Math.hypot(rp.tx - rp.av.grp.position.x, rp.tz - rp.av.grp.position.z);
-        rp.av.grp.position.x += (rp.tx - rp.av.grp.position.x) * 0.22;
-        rp.av.grp.position.y += (rp.ty - rp.av.grp.position.y) * 0.22;
-        rp.av.grp.position.z += (rp.tz - rp.av.grp.position.z) * 0.22;
-        rp.av.grp.rotation.y += shortestAngleDiff(rp.av.grp.rotation.y, rp.try) * 0.25;
+        rp.av.grp.position.x += (rp.tx - rp.av.grp.position.x) * 0.28;
+        rp.av.grp.position.y += (rp.ty - rp.av.grp.position.y) * 0.28;
+        rp.av.grp.position.z += (rp.tz - rp.av.grp.position.z) * 0.28;
+        rp.av.grp.rotation.y += shortestAngleDiff(rp.av.grp.rotation.y, rp.try) * 0.3;
         rp.av.setAnim(stepD > 0.04 ? 'Run' : (rp.anim || 'Idle'));
         rp.av.update(dt);
       });
 
+      // Fast 15Hz network sync for crisp PvP visibility
       syncAccum += dt;
-      if (syncAccum >= 0.25) {
+      if (syncAccum >= 0.07) {
         syncAccum = 0;
         if (typeof SQUAD_ID !== 'undefined' && SQUAD_ID && typeof syncBattleState === 'function') syncBattleState();
       }
@@ -3571,6 +3740,9 @@ function launchArenaWorld(squadId, mapCfg) {
     getPacket() {
       return {
         inMatch: true,
+        team: PRIVATE_ROOM.myTeam,
+        ready: true,
+        started: true,
         x: +px.toFixed(2),
         y: +py.toFixed(2),
         z: +pz.toFixed(2),
@@ -3617,6 +3789,7 @@ function exitMatch(claimRewards = false) {
   const { kills, mapName } = AR.stats();
   AR.cleanup();
   AR = null;
+  PRIVATE_ROOM.started = false;
   const el = document.getElementById('arena');
   if (el) el.remove();
   if (typeof markExitedBattle === 'function') markExitedBattle();
@@ -3638,7 +3811,7 @@ function exitMatch(claimRewards = false) {
   if (typeof render === 'function') render();
 }
 
-/* ===== CUSTOM HUD LAYOUT EDITOR (EVERY HUD BUTTON & INFO BLOCK MOVABLE/ADJUSTABLE ON DEMAND) ===== */
+/* ===== CUSTOM HUD LAYOUT EDITOR ===== */
 function openHudEditor() {
   const keys = [
     ['joy', 'JOYSTICK', 86],
