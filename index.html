@@ -406,13 +406,10 @@ const tabsH=(a,badges={})=>'<div class="tabs">'+a.map(t=>'<button class="'+(tb==
 const page=(title,body,half)=>'<div class="pg'+(half?' half':'')+'"><div class="ph"><button class="bk" aria-label="Back" onclick="go(\'\')">◀</button><h1>'+title+'</h1>'+cur()+'</div><div class="pb">'+body+'</div></div>';
 const activeMap=()=>MAPS.find(m=>m.id===S.map)||MAPS[0];
 
-function home(){
-  const d=S.quests.filter(q=>q.d!=='Boss'),dn=d.filter(q=>q.done===today()).length,n=nToday(),m=ms(),cl=MS.findIndex((x,i)=>n>=x[0]&&!m.c.includes(i));
-  const achReady=ACHS.some(a=>!S.ach.includes(a.id)&&a.cur(S)>=a.max);
+/* ===== SURGICAL HOME LOBBY SQUAD PATCHERS (PREVENT SCREEN FLICKER) ===== */
+function buildSqDock(){
   const sq=squadMembers(),host=isSquadHost();
-
-  /* 5-Player CODM-Style Home Lobby Squad Dock with Mic, Speaker, Host Flags & Exit */
-  const sqDock='<div class="sq-dock"><div class="sq-hdr"><span>SQUAD ('+sq.length+'/5)</span><div class="sq-vbtns">'+
+  return '<div class="sq-dock"><div class="sq-hdr"><span>SQUAD ('+sq.length+'/5)</span><div class="sq-vbtns">'+
     '<button class="vbtn '+(VOICE.micOn?'on':'muted')+'" title="Toggle Squad Mic" onclick="VOICE.toggleMic()">'+(VOICE.micOn?'🎙️':'🔇')+'</button>'+
     '<button class="vbtn '+(VOICE.spkOn?'on':'muted')+'" title="Toggle Squad Speaker" onclick="VOICE.toggleSpk()">'+(VOICE.spkOn?'🔊':'🔈')+'</button>'+
   '</div></div>'+
@@ -420,21 +417,36 @@ function home(){
     (sq.length<5&&host?'<div class="sq-slot empty" onclick="openInvitePicker()"><div class="sq-av">➕</div><div><b>INVITE ('+(5-sq.length)+' SLOTS)</b><div class="s" style="font-size:.54rem">BUILD 5-PLAYER TEAM</div></div></div>':'')+
     (SQUAD_ID?'<div class="sq-acts">'+(!host?'<button class="sm'+(MY_READY?' alt':'')+'" onclick="toggleReady()">'+(MY_READY?'UNREADY':'READY')+'</button>':'')+'<button class="sm danger" onclick="leaveSquad()">🚪 LEAVE</button></div>':'')+
   '</div>';
-
-  /* Up to 5 Floating Nameplates beneath the 3D Soldiers */
-  const lobTags='<div class="lob-tags">'+sq.map(p=>'<div class="ltag'+(p.isHost?' host':'')+'"><div class="rk-b">'+(p.isHost?'👑 HOST':'MEMBER')+' · LV.'+p.lvl+'</div><b>'+(p.speaking?'🗣️ ':'')+esc(p.name)+'</b><small style="color:'+(p.isHost?'#f5d300':p.ready?'#5be58a':'#fbbf24')+'">'+(p.isHost?'★ LEADER':p.ready?'✔ READY':'⏳ WAIT')+'</small></div>').join('')+'</div>';
-
-  const startBtn=SQUAD_ID
+}
+function buildLobTags(){
+  const sq=squadMembers();
+  return '<div class="lob-tags">'+sq.map(p=>'<div class="ltag'+(p.isHost?' host':'')+'"><div class="rk-b">'+(p.isHost?'👑 HOST':'MEMBER')+' · LV.'+p.lvl+'</div><b>'+(p.speaking?'🗣️ ':'')+esc(p.name)+'</b><small style="color:'+(p.isHost?'#f5d300':p.ready?'#5be58a':'#fbbf24')+'">'+(p.isHost?'★ LEADER':p.ready?'✔ READY':'⏳ WAIT')+'</small></div>').join('')+'</div>';
+}
+function buildStartBtn(){
+  const sq=squadMembers(),host=isSquadHost();
+  return SQUAD_ID
     ?(host?'<button class="nb big" onclick="launchSquadMatch()">▶ START<br><small>SQUAD ('+sq.length+'/5)</small></button>'
            :'<button class="nb big'+(MY_READY?' rdy':'')+'" onclick="toggleReady()">'+(MY_READY?'✔ READY':'⏳ READY?')+'<br><small>WAITING FOR HOST</small></button>')
     :'<button class="nb big" onclick="startMatch()">▶ START<br><small>3D Battle Arena</small></button>';
+}
+function patchHomeSquad(){
+  const d=document.getElementById('sq-dock-wrap'),t=document.getElementById('lob-tags-wrap'),sb=document.getElementById('start-btn-wrap'),mn=document.getElementById('home-map-name');
+  if(d)d.innerHTML=buildSqDock();
+  if(t)t.innerHTML=buildLobTags();
+  if(sb)sb.innerHTML=buildStartBtn();
+  if(mn)mn.textContent=activeMap().name;
+}
+
+function home(){
+  const d=S.quests.filter(q=>q.d!=='Boss'),dn=d.filter(q=>q.done===today()).length,n=nToday(),m=ms(),cl=MS.findIndex((x,i)=>n>=x[0]&&!m.c.includes(i));
+  const achReady=ACHS.some(a=>!S.ach.includes(a.id)&&a.cur(S)>=a.max);
 
   return '<div class="top"><div class="me"><button class="av" aria-label="Profile" onclick="go(\'profile\')">'+(S.eq.char>=0?ic(ITEMS[S.eq.char]):'🪖')+'</button><div><b>'+esc(S.name)+'</b> <small>LV '+S.lvl+' · '+TITLES[Math.min(Math.floor((S.lvl-1)/3),7)]+' · 🔥'+S.streak+'</small><div class="bar"><i style="width:'+S.xp/need(S.lvl)*100+'%"></i></div><div class="tlcur"><b>🪙 '+S.coins+'</b><b class="cp">💎 '+S.cp+' CP</b></div></div></div>'+cur()+'</div>'+
   '<div class="clk" id="clk"></div><div class="col L"><button class="ban login" onclick="go(\'missions\',\'Daily Login\')">'+(canLogin()?'<span class="tag">CLAIM</span>':'')+'DAILY LOGIN<small>Day '+((S.login.day%7)+1)+'/7 Check-in</small></button><button class="ban" onclick="go(\'missions\')">'+(cl>=0?'<span class="tag">NEW</span>':'')+'DAILY MISSIONS<small>'+dn+'/'+d.length+' done · Chests '+n+'/6</small></button><button class="ban sale" onclick="go(\'store\',\'Guns\')"><span class="tag">MYTHIC</span>ARMORY STORE<small>Buy skins & guns with 🪙/CP</small></button>'+
   (cl>=0?'<div class="claim">🎁 '+MS[cl][2]+'<button onclick="claimMs('+cl+')">CLAIM</button></div>':'')+'</div>'+
-  sqDock+lobTags+
+  '<div id="sq-dock-wrap">'+buildSqDock()+'</div><div id="lob-tags-wrap">'+buildLobTags()+'</div>'+
   '<div class="col Rr"><button class="mode" onclick="go(\'missions\',\'Focus Timer\')">⏱️ FOCUS TIMER<small>Earn CP (💎) + Wake Lock</small></button><button class="ban draw" onclick="go(\'crate\')" style="height:2.65rem">ARMORY DRAW<small>'+S.keys+' keys · Mythic drop</small></button><button class="mode" onclick="go(\'clan\',INBOX.length?\'Invitations\':\'Friends\')">'+(INBOX.length?'<span class="tag">'+INBOX.length+' INVITE</span>':achReady?'<span class="tag">NEW</span>':'')+'FRIENDS & SQUAD<small>Friends '+S.friends.length+' · Rank #'+rank()+'</small></button></div>'+
-  '<div class="bot"><button class="nb" onclick="go(\'store\')">🛒 STORE</button><button class="nb" onclick="go(\'loadout\')">🔫 LOADOUT</button><button class="nb" onclick="go(\'profile\',\'Safe House\')">🗂️ SAFE HOUSE</button><button class="nb" onclick="go(\'clan\')">'+(INBOX.length?'<span class="tag">'+INBOX.length+'</span>':'')+'👥 CLAN</button><div class="tick" id="tk">'+CHAT[ci%CHAT.length]+'</div><button class="nb mapb" onclick="if(SQUAD_ID&&!isSquadHost())return toast(\'Only Squad Host (👑) can change map\');go(\'maps\')"><span class="tag">TPP</span>🗺️ MAP<small>'+esc(activeMap().name)+'</small></button>'+startBtn+'</div>';
+  '<div class="bot"><button class="nb" onclick="go(\'store\')">🛒 STORE</button><button class="nb" onclick="go(\'loadout\')">🔫 LOADOUT</button><button class="nb" onclick="go(\'profile\',\'Safe House\')">🗂️ SAFE HOUSE</button><button class="nb" onclick="go(\'clan\')">'+(INBOX.length?'<span class="tag">'+INBOX.length+'</span>':'')+'👥 CLAN</button><div class="tick" id="tk">'+CHAT[ci%CHAT.length]+'</div><button class="nb mapb" onclick="if(SQUAD_ID&&!isSquadHost())return toast(\'Only Squad Host (👑) can change map\');go(\'maps\')"><span class="tag">TPP</span>🗺️ MAP<small id="home-map-name">'+esc(activeMap().name)+'</small></button><div id="start-btn-wrap" style="display:contents">'+buildStartBtn()+'</div></div>';
 }
 function all(){return[{n:S.name,i:S.id,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖',me:1}].concat(S.friends).sort((a,b)=>b.l-a.l||b.c-a.c)}
 const rank=()=>all().findIndex(f=>f.me)+1;
@@ -555,7 +567,7 @@ function pClan(){
   return page('Clan, Friends & 5-Player Squad',tabsH(['Friends','Invitations','Squad Lobby','Leaderboard','Cloud','Backup'],{Invitations:INBOX.length})+'<div class="ct">'+c+'</div>');
 }
 
-function render(){if(busy||inLogin)return;const f={missions:pMissions,store:pStore,crate:pCrate,loadout:pLoadout,profile:pProfile,clan:pClan,maps:pMaps}[pg];ui.innerHTML=f?f():home()}
+function render(){if(busy||inLogin)return;if(typeof uiVisualSig==='function')_lastUiSig=uiVisualSig();const f={missions:pMissions,store:pStore,crate:pCrate,loadout:pLoadout,profile:pProfile,clan:pClan,maps:pMaps}[pg];ui.innerHTML=f?f():home()}
 const RANKS=[[1,'Rookie'],[5,'Veteran'],[10,'Elite'],[15,'Pro'],[20,'Master'],[30,'Grand Master'],[40,'Legend']],rk=l=>{let r=0;RANKS.forEach((x,i)=>{if(l>=x[0])r=i});return r},lrew=n=>n%5?[50,1,10]:[150,3,35];
 function claimLvl(n){if(S.lvl<n||S.lr.includes(n))return;const[c,k,cp]=lrew(n);S.lr.push(n);S.coins+=c;S.keys+=k;S.cp+=cp;SFX.quest();save();render();toast('Level '+n+' reward: +'+c+' 🪙 +'+k+' 🗝️ +'+cp+' 💎 CP')}
 
@@ -602,7 +614,7 @@ let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogi
 const TO=()=>({signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
 function cloudInit(){if(!FB_CONFIG.apiKey||typeof firebase==='undefined')return;try{firebase.initializeApp(FB_CONFIG);AU=firebase.auth();DB=firebase.firestore();
 AU.getRedirectResult().catch(e=>{if(e&&e.code)toast('Login failed: '+esc(e.code))});
-AU.onAuthStateChanged(async u=>{USER=u;if(u){cst='Signing in...';await cloudLoad();listenMultiplayer()}else{cst='Local only';if(unsub)unsub();if(unsubOutbox)unsubOutbox();if(unsubSquad)unsubSquad()}upd();render()})}catch(e){cst='Cloud error';console.warn(e)}}
+AU.onAuthStateChanged(async u=>{USER=u;if(u){cst='Signing in...';await cloudLoad();listenMultiplayer()}else{cst='Local only';if(unsub)unsub();if(unsubOutbox)unsubOutbox();if(unsubSquad)unsubSquad()}upd();safeRender(true)})}catch(e){cst='Cloud error';console.warn(e)}}
 function gLogin(){if(!AU)return toast('Cloud is not set up yet.');const p=new firebase.auth.GoogleAuthProvider();p.setCustomParameters({prompt:'select_account'});AU.signInWithPopup(p).catch(e=>{if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')AU.signInWithRedirect(p);else if(e.code!=='auth/popup-closed-by-user')toast('Login failed: '+esc(e.code||e.message))})}
 async function cloudLoad(){try{await syncClock();const d=await DB.collection('saves').doc(USER.uid).get();
 if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){if((S.total||0)>0&&!confirm('Cloud save found: Level '+c.lvl+'. OK = use cloud progress. Cancel = keep THIS device and overwrite cloud.')){await cloudPush();cst='Synced ✓'}else{S=Object.assign(fresh(),c,{reg:1});if(!S.createdAt)S.createdAt=Date.now();if(typeof S.cp!=='number')S.cp=150;if(typeof S.wins!=='number')S.wins=0;S.cfg=Object.assign(defCfg(),S.cfg||{});S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});lsave();look();toast('Cloud progress loaded ☁️')}}else{S.reg=1;lsave();await cloudPush()}}
@@ -627,7 +639,7 @@ function listenFriends(){
       if(f){f.n=x.n;f.l=x.l;f.c=x.c;f.s=x.s;f.a=x.a;f.eq=x.eq||f.eq}
     });
     lsave();
-    if(!AR&&(pg===''||pg==='clan'))render();
+    if(!AR&&(pg===''||pg==='clan'))safeRender();
   });
 }
 async function wallpaper(){if(S.wp==='default')return null;const k='lul.wp.'+S.wp+'.'+today();try{const c=localStorage.getItem(k);if(c)return c}catch(e){}let u=null;
@@ -640,7 +652,7 @@ return '<div class="fr"><div style="flex:1"><b>Cloud Save</b><div class="s" id="
 '<div class="fr"><div style="flex:1"><b>Daily Wallpaper</b><div class="s">New background every day</div></div><select onchange="S.wp=this.value;save();toast(\'Applying...\');setTimeout(()=>location.reload(),700)" style="width:auto">'+o('default','Classic photo')+o('nasa','NASA space photo')+o('wiki','Wikipedia photo of the day')+'</select></div>'}
 
 /* ---------- 3D LOBBY ENGINE (5-SOLDIER V-FORMATION PLATFORM) ---------- */
-let R,SC,CAM,SOL,LOBBY_AVS=[],PR,RG,BGM,PS,tx=0,drag=0,gx=0,gy=0,rocks=[],liveFps=60,fCnt=0,fT=0;
+let R,SC,CAM,SOL,LOBBY_AVS=[],PR,RG,BGM,PS,tx=0,drag=0,gx=0,gy=0,tgx=0,tgy=0,rocks=[],liveFps=60,fCnt=0,fT=0;
 const GLTF_CACHE={soldier:null};
 function mat(c){return new THREE.MeshStandardMaterial({color:c,roughness:.75,metalness:.2,flatShading:true})}
 function applyGfx(){if(!R)return;const q=S.cfg.gfx||'High';const pr=q==='Low'?.75:q==='Medium'?1:q==='Ultra'?Math.min(devicePixelRatio,2.5):Math.min(devicePixelRatio,1.75);R.setPixelRatio(pr);if(PS)PS.visible=q!=='Low';if(SC&&SC.fog)SC.fog.far=q==='Low'?14:24}
@@ -706,8 +718,8 @@ let lx=null;
 addEventListener('pointerdown',e=>{if(AR||e.button===2||e.target.closest('button,input,select,textarea,.pg>.pb:not(.x),.sq-dock'))return;lx=normPt(e.clientX,e.clientY).x});
 addEventListener('pointermove',e=>{if(!AR&&lx!==null){const x=normPt(e.clientX,e.clientY).x,sens=(S.cfg.sens||100)/100;drag+=(x-lx)*.012*sens;lx=x}});
 addEventListener('pointerup',()=>lx=null);
-addEventListener('deviceorientation',e=>{if(S.cfg.gyro&&e.gamma!=null){gx=Math.max(-25,Math.min(25,e.gamma))*.015;gy=Math.max(-25,Math.min(25,(e.beta||45)-45))*.008}});
-function rs(){const w=isPortrait()?innerHeight:innerWidth,h=isPortrait()?innerWidth:innerHeight;R.setSize(w,h);CAM.aspect=w/h;CAM.updateProjectionMatrix()}rs();addEventListener('resize',rs);
+addEventListener('deviceorientation',e=>{if(S.cfg.gyro&&e.gamma!=null){const ng=Math.max(-20,Math.min(20,e.gamma))*.012,nb=Math.max(-20,Math.min(20,(e.beta||45)-45))*.006;if(Math.abs(ng-tgx)>.004)tgx=ng;if(Math.abs(nb-tgy)>.004)tgy=nb}});
+function rs(){if(document.activeElement&&/INPUT|TEXTAREA/.test(document.activeElement.tagName))return;const w=isPortrait()?innerHeight:innerWidth,h=isPortrait()?innerWidth:innerHeight;R.setSize(w,h);CAM.aspect=w/h;CAM.updateProjectionMatrix()}rs();addEventListener('resize',rs);
 const ck=new THREE.Clock();let lastDraw=0;
 (function an(t){
   requestAnimationFrame(an);
@@ -718,6 +730,7 @@ const ck=new THREE.Clock();let lastDraw=0;
   const sec=t*.001,dt=ck.getDelta();
   LOBBY_AVS.forEach(a=>{if(a.grp.visible&&a.mix)a.mix.update(dt)});
   if(BGM)BGM.rotation.y=sec*.012;
+  gx+=(tgx-gx)*.08;gy+=(tgy-gy)*.08;
   CAM.position.x=(S.cfg.rot?Math.sin(sec*.2)*.35:0)+gx;CAM.position.y=1.65-gy;CAM.lookAt(0,1.3,0);
   SOL.position.y=Math.sin(sec*1.6)*.03;SOL.position.x+=(tx-SOL.position.x)*.08;drag*=.985;
   SOL.rotation.y=(S.cfg.rot?Math.sin(sec*.4)*.08:0)+drag;
