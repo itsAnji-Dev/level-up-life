@@ -1,476 +1,760 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
-  <meta name="theme-color" content="#0a0e1f" />
-  <title>LEVEL UP LIFE OPS — 3D Tactical Arena</title>
-  <link rel="manifest" href="./manifest.json" />
-  <link rel="icon" href="./icon-192.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./style.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
-</head>
-<body>
-  <div id="wp"></div>
-  <div id="fog"><i></i><i></i></div>
-  <div id="tod"></div>
-  <canvas id="gl"></canvas>
-  <div id="ui"></div>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0a0e1f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon-192.svg">
+<link rel="stylesheet" href="style.css">
+<title>Level Up Life: Mission Hub</title>
+</head><body>
+<div id="wp"></div><canvas id="gl"></canvas><div id="tod"></div><div id="fog"><i></i><i></i></div><div id="ui"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="arena3d.js"></script>
+<script src="mp-voice.js"></script>
+<script>
+/* ===== DISABLE BROWSER RIGHT-CLICK MENU, DOUBLE-TAP ZOOM & LOCK LANDSCAPE ===== */
+document.addEventListener('contextmenu',e=>e.preventDefault());
+let _lastTap=0;
+document.addEventListener('touchend',e=>{
+  const t=Date.now();
+  if(t-_lastTap<320&&!e.target.closest('input,textarea,select'))e.preventDefault();
+  _lastTap=t;
+},{passive:false});
+document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
+document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
+function lockLand(){try{if(screen.orientation&&screen.orientation.lock)screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}
+window.addEventListener('pointerdown',lockLand,{once:true});
+const isPortrait=()=>window.innerHeight>window.innerWidth;
+function normPt(cx,cy){return isPortrait()?{x:cy,y:window.innerWidth-cx}:{x:cx,y:cy}}
 
-  <script>
-    /* ===== CORE LOBBY STATE, DATA, AUDIO & HELPERS ===== */
-    const STORE_KEY = 'lul_ops_save_v6';
-    const GLTF_CACHE = { soldier: null };
+/* ===== CLOUD SETUP: Firebase web-app config (level-up-life-ops) ===== */
+const FB_CONFIG={
+  apiKey:"AIzaSyCZAl_IdAe418ntfJO0kvgWATtjcXy81-8",
+  authDomain:"level-up-life-ops.firebaseapp.com",
+  projectId:"level-up-life-ops",
+  appId:"1:252491857005:web:547c174f5810fc148a1364"
+};
 
-    const RAR = {
-      C: { n: 'Common', c: 0x9aa0b5 },
-      R: { n: 'Rare', c: 0x4aa8ff },
-      E: { n: 'Epic', c: 0xb45cff },
-      L: { n: 'Legendary', c: 0xffb020 },
-      M: { n: 'Mythic', c: 0xff2a55 }
-    };
+/* ===== PWA SERVICE WORKER & INSTALL PROMPT ===== */
+let PWA_PROMPT=null;
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();PWA_PROMPT=e;if(typeof render==='function')render()});
+window.addEventListener('appinstalled',()=>{PWA_PROMPT=null;if(typeof toast==='function')toast('Installed! Launch Life Ops from your home screen.');if(typeof render==='function')render()});
+async function installApp(){if(!PWA_PROMPT)return toast('In Chrome menu (⋮), tap "Add to Home screen" or "Install app".');PWA_PROMPT.prompt();const r=await PWA_PROMPT.userChoice;if(r.outcome==='accepted')PWA_PROMPT=null;render()}
+const isStandalone=()=>window.matchMedia('(display-mode: fullscreen)').matches||window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
 
-    const ITEMS = [
-      { id: 0, name: 'VECTOR SMG', cat: 'smg', r: 'R', icon: '🔫', price: 200 },
-      { id: 1, name: 'M870 SHOTGUN', cat: 'shotgun', r: 'E', icon: '💥', price: 450 },
-      { id: 2, name: 'M4A1 CARBINE', cat: 'ar', r: 'C', icon: '🔫', price: 100 },
-      { id: 3, name: 'M4A1 TACTICAL', cat: 'ar', r: 'R', icon: '🔫', price: 300 },
-      { id: 4, name: 'GHOST RECON ARMOR', cat: 'skin', r: 'E', icon: '🦺', price: 500 },
-      { id: 5, name: 'L96A1 SNIPER', cat: 'sniper', r: 'L', icon: '🎯', price: 850 },
-      { id: 6, name: 'RPG-7 LAUNCHER', cat: 'launcher', r: 'L', icon: '🚀', price: 950 },
-      { id: 7, name: 'AK-47 GOLD DRAGON', cat: 'ar', r: 'M', icon: '🐉', price: 1500 }
-    ];
-
-    const MAPS = [
-      { id: 'firing_range', name: 'FIRING RANGE', sky: 0x6ea8dc, desc: 'Military training compound with warehouses & cover.' },
-      { id: 'nuketown', name: 'NUKETOWN DESERT', sky: 0xd99b52, desc: 'Sun-baked desert outpost with close-quarters lanes.' },
-      { id: 'shipment', name: 'SHIPMENT DOCKS', sky: 0x475569, desc: 'Tight shipping container yard for fast gunfights.' }
-    ];
-
-    function defaultState() {
-      return {
-        name: 'ANJI',
-        lvl: 12,
-        xp: 420,
-        coins: 1250,
-        cp: 180,
-        wins: 9,
-        map: 'firing_range',
-        eq: { gun: 3, skin: 4 },
-        owned: [0, 1, 2, 3, 4, 5, 6, 7],
-        cfg: { gfx: 'High', sens: 100, muted: false, hud: {}, gunsmith: {} }
-      };
-    }
-
-    let S = (() => {
-      try {
-        const raw = localStorage.getItem(STORE_KEY);
-        if (!raw) return defaultState();
-        const parsed = JSON.parse(raw);
-        return Object.assign(defaultState(), parsed, {
-          eq: Object.assign({ gun: 3, skin: 4 }, parsed.eq || {}),
-          cfg: Object.assign({ gfx: 'High', sens: 100, muted: false, hud: {}, gunsmith: {} }, parsed.cfg || {})
-        });
-      } catch (e) {
-        return defaultState();
-      }
-    })();
-
-    function save() {
-      try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {}
-    }
-
-    function esc(str) {
-      return String(str == null ? '' : str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    function isPortrait() {
-      return window.innerHeight > window.innerWidth;
-    }
-
-    function normPt(clientX, clientY) {
-      if (isPortrait()) {
-        return { x: clientY, y: window.innerWidth - clientX };
-      }
-      return { x: clientX, y: clientY };
-    }
-
-    function toast(msg) {
-      document.querySelectorAll('.toast').forEach(t => t.remove());
-      const el = document.createElement('div');
-      el.className = 'toast';
-      el.textContent = msg;
-      document.body.appendChild(el);
-      setTimeout(() => el.remove(), 2600);
-    }
-
-    function addXP(amt) {
-      S.xp = (S.xp || 0) + amt;
-      const need = (S.lvl || 1) * 100;
-      while (S.xp >= need) {
-        S.xp -= need;
-        S.lvl = (S.lvl || 1) + 1;
-      }
-      save();
-    }
-
-    function activeMap() {
-      return MAPS.find(m => m.id === S.map) || MAPS[0];
-    }
-
-    function defHud() {
-      return {
-        minimap: { x: 2, y: 18, s: 100, o: 95 },
-        joy:     { x: 4, y: 68, s: 100, o: 95 },
-        fire:    { x: 84, y: 64, s: 100, o: 95 },
-        scope:   { x: 75, y: 50, s: 90, o: 90 },
-        jump:    { x: 88, y: 46, s: 90, o: 90 },
-        crouch:  { x: 88, y: 31, s: 90, o: 90 },
-        reload:  { x: 76, y: 76, s: 90, o: 90 },
-        grenade: { x: 67, y: 64, s: 88, o: 90 },
-        wswitch: { x: 67, y: 40, s: 88, o: 90 },
-        cam:     { x: 76, y: 24, s: 88, o: 90 },
-        hp:      { x: 1, y: 1, s: 100, o: 95 },
-        ammo:    { x: 16, y: 1, s: 100, o: 95 },
-        sqhud:   { x: 1, y: 12, s: 100, o: 95 },
-        pckeys:  { x: 1, y: 74, s: 100, o: 95 }
-      };
-    }
-
-    const SFX = {
-      muted: !!S.cfg.muted,
-      tone(f1, f2, dur = 0.08, type = 'triangle', vol = 0.14) {
-        if (this.muted) return;
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        try {
-          if (!this._ac) this._ac = new AC();
-          if (this._ac.state === 'suspended') this._ac.resume();
-          const t = this._ac.currentTime;
-          const o = this._ac.createOscillator();
-          const g = this._ac.createGain();
-          o.type = type;
-          o.frequency.setValueAtTime(f1, t);
-          o.frequency.exponentialRampToValueAtTime(Math.max(20, f2), t + dur);
-          g.gain.setValueAtTime(vol, t);
-          g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-          o.connect(g).connect(this._ac.destination);
-          o.start(t);
-          o.stop(t + dur + 0.01);
-        } catch (e) {}
-      },
-      click() { this.tone(620, 320, 0.05); },
-      back() { this.tone(360, 220, 0.07); },
-      deploy() { this.tone(240, 740, 0.24, 'sawtooth', 0.16); },
-      coin() { this.tone(880, 1320, 0.11, 'sine', 0.15); },
-      equip() { this.tone(520, 820, 0.09); },
-      lvlup() { this.tone(440, 1180, 0.3, 'triangle', 0.18); },
-      shot() { this.tone(190, 45, 0.12, 'sawtooth', 0.2); },
-      reload() { this.tone(540, 260, 0.09); },
-      boom() { this.tone(110, 24, 0.42, 'sawtooth', 0.28); }
-    };
-
-    if (typeof window.VOICE === 'undefined') {
-      window.VOICE = {
-        micOn: false,
-        spkOn: true,
-        toggleMic() {
-          this.micOn = !this.micOn;
-          const b = document.getElementById('ar-mic');
-          if (b) { b.textContent = this.micOn ? '🎙️' : '🔇'; b.className = 'abtn-top ' + (this.micOn ? 'on' : 'muted'); }
-          toast(this.micOn ? '🎙️ Squad Mic ON' : '🔇 Squad Mic MUTED');
-        },
-        toggleSpk() {
-          this.spkOn = !this.spkOn;
-          const b = document.getElementById('ar-spk');
-          if (b) { b.textContent = this.spkOn ? '🔊' : '🔈'; b.className = 'abtn-top ' + (this.spkOn ? 'on' : 'muted'); }
-          toast(this.spkOn ? '🔊 Squad Audio ON' : '🔈 Squad Audio MUTED');
-        }
-      };
-    }
-
-    function squadMembers() {
-      return [{ pid: 'me', name: S.name || 'ANJI', isHost: true, me: true, speaking: false }];
-    }
-
-    function confirmExitMatch() {
-      if (!AR) return;
-      AR.paused = 1;
-      if (document.pointerLockElement) {
-        try { document.exitPointerLock(); } catch (e) {}
-      }
-      const m = document.createElement('div');
-      m.className = 'modal';
-      m.innerHTML = `
-        <div class="pop L">
-          <h3 style="color:var(--y);margin-bottom:8px">EXIT 3D BATTLE ARENA?</h3>
-          <p class="s" style="margin-bottom:14px">Extract now to claim your kill XP & Coins, or resume combat.</p>
-          <div class="row" style="justify-content:center">
-            <button class="sm alt" id="ex-resume">RESUME</button>
-            <button class="sm" id="ex-claim">EXTRACT & CLAIM</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(m);
-      document.getElementById('ex-resume').onclick = () => {
-        m.remove();
-        if (AR) AR.paused = 0;
-      };
-      document.getElementById('ex-claim').onclick = () => {
-        m.remove();
-        exitMatch(true);
-      };
-    }
-
-    /* ===== LOBBY UI RENDERER ===== */
-    let activePage = null;
-
-    function openSettingsModal() {
-      const m = document.createElement('div');
-      m.className = 'modal';
-      m.innerHTML = `
-        <div class="pop R" style="text-align:left">
-          <div class="row" style="justify-content:space-between">
-            <b style="color:var(--y);font-size:1rem">⚙️ SETTINGS & HUD</b>
-            <button class="sm danger" id="st-close">✕</button>
-          </div>
-          <div style="margin:10px 0">
-            <div class="s" style="margin-bottom:4px">Graphics Quality</div>
-            <div class="pills" id="st-gfx">
-              ${['Low', 'Medium', 'High'].map(g => `<button class="${S.cfg.gfx === g ? 'on' : ''}" data-g="${g}">${g}</button>`).join('')}
-            </div>
-          </div>
-          <div style="margin:10px 0">
-            <div class="s">Aim Sensitivity: <b id="st-sval" style="color:var(--y)">${S.cfg.sens}%</b></div>
-            <input type="range" id="st-sens" min="30" max="200" value="${S.cfg.sens}" />
-          </div>
-          <div class="row" style="margin-top:12px">
-            <button class="sm" id="st-hud">🎛️ CUSTOMIZE HUD</button>
-            <button class="sm alt" id="st-mute">${SFX.muted ? '🔇 UNMUTE SFX' : '🔊 MUTE SFX'}</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(m);
-
-      document.getElementById('st-close').onclick = () => m.remove();
-      m.querySelectorAll('#st-gfx button').forEach(b => {
-        b.onclick = () => {
-          S.cfg.gfx = b.dataset.g;
-          save();
-          m.querySelectorAll('#st-gfx button').forEach(x => x.classList.toggle('on', x === b));
-          toast('Graphics: ' + S.cfg.gfx);
-        };
+/* ===== REAL GAME AUDIO ENGINE ===== */
+const SFX=(()=>{
+  const G='https://actions.google.com/sounds/v1/';
+  const LIB={
+    click:[G+'weapons/rifle_fire_select.ogg'],
+    back:[G+'tools/ejecting_a_cassette.ogg'],
+    coin:[G+'weapons/shell_casings_revolver.ogg'],
+    shot:[G+'weapons/gun_powder_ignite.ogg',G+'weapons/rifle_fire_select.ogg'],
+    reload:[G+'weapons/gun_reload.ogg'],
+    boom:[G+'weapons/explosion_large.ogg'],
+    gunC:[G+'weapons/gun_parts_handling.ogg'],
+    gunR:[G+'weapons/rifle_charging_handle.ogg'],
+    gunE:[G+'weapons/shot_gun_handling.ogg'],
+    gunL:[G+'weapons/cocking_a_50cal_gun.ogg'],
+    gunM:[G+'science_fiction/sci_fi_vortex.ogg',G+'weapons/cocking_a_50cal_gun.ogg'],
+    shake:[G+'science_fiction/suspense_builder.ogg'],
+    lootC:[G+'weapons/gun_powder_ignite.ogg',G+'weapons/gun_parts_handling.ogg'],
+    lootR:[G+'weapons/gun_reload.ogg',G+'weapons/rifle_charging_handle.ogg'],
+    lootE:[G+'science_fiction/sci_fi_vortex.ogg',G+'weapons/shot_gun_handling.ogg'],
+    cheer:[G+'crowd/applause.ogg']
+  };
+  const pool={};let ctx=null,amb=null;
+  const cfg=()=>S&&S.cfg?S.cfg:{sfx:1,vol:85,bgm:0,vib:1};
+  const volScale=()=>Math.max(0,Math.min(1,(cfg().vol??85)/100));
+  function getCtx(){const A=window.AudioContext||window.webkitAudioContext;if(!A)return null;if(!ctx)ctx=new A();if(ctx.state==='suspended')ctx.resume();return ctx}
+  function vib(ms){try{if(cfg().vib&&navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
+  function synth(f1,f2,dur,type='triangle',vol=.14,delay=0){
+    const c=getCtx();if(!c)return;
+    const t=c.currentTime+delay,o=c.createOscillator(),g=c.createGain();
+    o.type=type;o.frequency.setValueAtTime(f1,t);
+    if(f2&&f2!==f1)o.frequency.exponentialRampToValueAtTime(Math.max(20,f2),t+dur);
+    const v=vol*volScale();
+    g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(v,t+.015);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+dur+.02);
+  }
+  function brassFanfare(grand=0){
+    if(!cfg().sfx||volScale()<=0)return;
+    const c=getCtx();if(!c)return;
+    const chords=grand?[[130.81,196,261.63,329.63],[146.83,220,293.66,369.99],[164.81,246.94,329.63,415.30],[196,293.66,392,493.88,587.33]]:[[130.81,196,261.63],[164.81,246.94,329.63],[196,293.66,392,493.88]];
+    const step=grand?.22:.17;
+    chords.forEach((notes,idx)=>{
+      const dur=idx===chords.length-1?(grand?.95:.65):step*.95;
+      const t0=c.currentTime+idx*step;
+      notes.forEach(freq=>{
+        const o=c.createOscillator(),f=c.createBiquadFilter(),g=c.createGain();
+        o.type='sawtooth';o.frequency.setValueAtTime(freq,t0);
+        f.type='lowpass';f.frequency.setValueAtTime(650,t0);f.frequency.exponentialRampToValueAtTime(1450,t0+dur*.6);
+        const v=(grand?.085:.07)*volScale();
+        g.gain.setValueAtTime(.0001,t0);g.gain.linearRampToValueAtTime(v,t0+.035);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+        o.connect(f);f.connect(g);g.connect(c.destination);o.start(t0);o.stop(t0+dur+.03);
       });
-      const sensInp = document.getElementById('st-sens');
-      sensInp.oninput = () => {
-        S.cfg.sens = +sensInp.value;
-        document.getElementById('st-sval').textContent = S.cfg.sens + '%';
-        save();
-      };
-      document.getElementById('st-hud').onclick = () => {
-        m.remove();
-        if (typeof openHudEditor === 'function') openHudEditor();
-      };
-      document.getElementById('st-mute').onclick = e => {
-        SFX.muted = !SFX.muted;
-        S.cfg.muted = SFX.muted;
-        save();
-        e.target.textContent = SFX.muted ? '🔇 UNMUTE SFX' : '🔊 MUTE SFX';
-      };
-    }
+    });
+  }
+  function clip(urls,vol=.8,maxMs=2800,fb=null){
+    if(!cfg().sfx||volScale()<=0)return;
+    const u=Array.isArray(urls)?urls[Math.floor(Math.random()*urls.length)]:urls;
+    try{
+      if(!pool[u]){pool[u]=new Audio(u);pool[u].preload='auto'}
+      const a=pool[u].cloneNode();a.volume=Math.min(1,vol*volScale());
+      const p=a.play();if(p&&p.catch)p.catch(()=>{if(fb)fb()});
+      if(maxMs)setTimeout(()=>{try{a.pause();a.currentTime=0}catch(e){}},maxMs);
+    }catch(e){if(fb)fb()}
+  }
+  function preload(){Object.values(LIB).flat().forEach(u=>{if(!pool[u]){pool[u]=new Audio(u);pool[u].preload='auto'}})}
+  function click(){vib(12);clip(LIB.click,.55,400,()=>synth(540,260,.05,'triangle',.1))}
+  function back(){vib(10);clip(LIB.back,.65,600,()=>synth(380,200,.06,'sine',.1))}
+  function coin(){vib(20);clip(LIB.coin,.8,1100,()=>synth(660,990,.12,'triangle',.12))}
+  function shot(){vib(15);clip(LIB.shot,.8,500,()=>synth(180,55,.09,'sawtooth',.16))}
+  function reload(){vib([15,40,20]);clip(LIB.reload,.85,1500,()=>synth(260,420,.14,'triangle',.12))}
+  function boom(){vib([60,30,90]);clip(LIB.boom,.95,2200,()=>synth(120,28,.45,'sawtooth',.22))}
+  function equip(type,r){
+    vib([20,30,30]);
+    if(type==='gun')clip(LIB['gun'+(r||'C')]||LIB.gunC,.9,1800,()=>synth(220,440,.15,'sawtooth',.14));
+    else clip(LIB.gunR,.75,1200,()=>synth(440,660,.12,'triangle',.12));
+  }
+  function quest(){vib([25,30,55]);brassFanfare(0);clip(LIB.cheer,.45,2200)}
+  function lvlup(){vib([40,40,40,40,100]);brassFanfare(1);clip(LIB.cheer,.75,3200)}
+  function shake(){vib([25,45,25,45,35,45,50]);clip(LIB.shake,.85,1150,()=>{for(let i=0;i<7;i++)synth(110+i*22,85,.08,'square',.08,i*.13)})}
+  function loot(r){
+    if(r==='M'||r==='L'){vib([60,40,60,40,150]);brassFanfare(1);clip(LIB.cheer,.7,3000)}
+    else if(r==='E'){vib([45,35,90]);clip(LIB.lootE,.9,2400,()=>brassFanfare(0))}
+    else if(r==='R'){vib([30,30,60]);clip(LIB.lootR,.85,1800,()=>brassFanfare(0))}
+    else{vib(35);clip(LIB.lootC,.8,1500,()=>synth(280,420,.18,'triangle',.12))}
+  }
+  function deploy(){vib([30,40,60]);clip(LIB.gunL,.9,1600,()=>synth(220,440,.2,'sawtooth',.15))}
+  function setAmb(on){
+    if(!on){if(amb){try{amb.stop()}catch(e){}amb=null}return}
+    const c=getCtx();if(!c||amb)return;
+    const o1=c.createOscillator(),o2=c.createOscillator(),f=c.createBiquadFilter(),g=c.createGain();
+    o1.type='sawtooth';o1.frequency.value=55;o2.type='triangle';o2.frequency.value=82.41;
+    f.type='lowpass';f.frequency.value=160;g.gain.value=.035;
+    o1.connect(f);o2.connect(f);f.connect(g);g.connect(c.destination);
+    o1.start();o2.start();amb={stop(){o1.stop();o2.stop()}};
+  }
+  return{preload,click,back,coin,shot,reload,boom,equip,quest,lvlup,shake,loot,deploy,setAmb,vib};
+})();
+document.addEventListener('pointerdown',e=>{if(e.button===2)return;const b=e.target.closest('button,select');if(!b)return;if(b.classList.contains('bk'))SFX.back();else SFX.click()},{passive:true});
 
-    function render() {
-      const ui = document.getElementById('ui');
-      if (!ui) return;
-      const curGun = ITEMS.find(x => x.id === S.eq.gun) || ITEMS[3];
-      const map = activeMap();
-      const xpPct = Math.min(100, Math.round(((S.xp || 0) / ((S.lvl || 1) * 100)) * 100));
+/* ===== CATALOG ===== */
+const RAR={
+  C:{n:'Basic',w:55,dupe:5,price:40,cur:'coins',c:0x9aa0b5},
+  R:{n:'Normal',w:26,dupe:15,price:120,cur:'coins',c:0x4aa8ff},
+  E:{n:'Epic',w:12,dupe:40,price:280,cur:'coins',c:0xb45cff},
+  L:{n:'Legendary',w:5,dupe:120,price:120,cur:'cp',c:0xffb020},
+  M:{n:'Mythic',w:2,dupe:300,price:320,cur:'cp',c:0xff2a55}
+};
+const ITEMS=[
+  ['Gun','🔫','Rusty Pistol','C','pistol-gun','smg'],
+  ['Gun','🔫','Street SMG','C','submachine-gun','smg'],
+  ['Gun','🔫','Pump Shotgun','C','sawed-off-shotgun','shotgun'],
+  ['Gun','🔫','M4 Carbine','R','rifle','ar'],
+  ['Gun','🏹','Shadow Crossbow','R','bow-arrow','sniper'],
+  ['Gun','🔫','AK-47 Tactical','E','assault-rifle','ar'],
+  ['Gun','🔫','DL Q33 Sniper','E','sniper-rifle','sniper'],
+  ['Gun','🔫','AK-47 Gold Dragon','L','ak47','ar'],
+  ['Gun','🚀','FHJ-18 Overlord','L','bazooka','launcher'],
+  ['Gun','🐉','Krig 6 Ice Drake','M','ray-gun','ar'],
+  ['Gun','⚡','EM2 Eclipse Mythic','M','plasma-bolt','sniper'],
+  ['Skin','👕','Recruit Hoodie','C','hoodie','skin'],
+  ['Skin','🧢','Tactical Cap','C','baseball-cap','skin'],
+  ['Skin','🦺','Standard Kevlar','R','kevlar-vest','skin'],
+  ['Skin','🕶️','Spec-Ops Visor','R','sunglasses','skin'],
+  ['Skin','🧥','Ghost Stealth Cloak','E','cloak','skin'],
+  ['Skin','🛡️','Juggernaut Plate','E','armor-vest','skin'],
+  ['Skin','👑','Sovereign Gold Suit','L','crown','skin'],
+  ['Skin','🔥','Phoenix Blaze Armor','L','phoenix-feather','skin'],
+  ['Skin','🩸','Templar Crimson Mythic','M','aura','skin'],
+  ['Character','🧑‍🎓','Rookie Cadet','C','graduate-cap','char'],
+  ['Character','🪖','Ranger Scout','C','soldier','char'],
+  ['Character','🥷','Recon Ninja','R','ninja-head','char'],
+  ['Character','🧙','Tactician Sage','R','wizard-face','char'],
+  ['Character','💀','Ghost Operator','E','ninja-mask','char'],
+  ['Character','🤖','Synapse Exo','E','cyborg-face','char'],
+  ['Character','🐉','Mace Gold Warlord','L','dragon-head','char'],
+  ['Character','🦾','Reaper Ashura','L','robot-golem','char'],
+  ['Character','👹','Siren Sangria Mythic','M','skull-mask','char'],
+  ['Bundle','📦','Basic Recruit Crate','C','cardboard-box','bundle'],
+  ['Bundle','🎒','Field Ops Pack','R','backpack','bundle'],
+  ['Bundle','🎁','Elite Tactical Bundle','E','open-treasure-chest','bundle'],
+  ['Bundle','💎','Golden Dynasty Bundle','L','emerald','bundle'],
+  ['Bundle','🔮','Mythic Crimson Arsenal','M','crystal-shine','bundle'],
+  ['Pet','🐱','Base Camp Cat','C','cat','pet'],
+  ['Pet','🐶','K9 Unit Riley','R','sitting-dog','pet'],
+  ['Pet','🦊','Cyber Fox','E','fox-head','pet'],
+  ['Pet','🦉','Night Watch Owl','E','owl','pet'],
+  ['Pet','🐺','Dire Fenrir','L','wolf-head','pet'],
+  ['Pet','🦄','Celestial Pegasus','M','unicorn','pet']
+].map((a,i)=>({id:i,type:a[0],ic:a[1],name:a[2],r:a[3],gicon:a[4],cat:a[5]}));
 
-      let pageHtml = '';
-      if (activePage === 'loadout') {
-        pageHtml = `
-          <div class="pg">
-            <div class="ph">
-              <button class="bk" onclick="activePage=null;render()">←</button>
-              <h1>🎒 ARSENAL & LOADOUT</h1>
-              <span class="s">EQUIPPED: <b style="color:var(--y)">${esc(curGun.name)}</b></span>
-            </div>
-            <div class="pb">
-              <div class="ct">
-                <div class="grid">
-                  ${ITEMS.filter(it => it.cat !== 'skin').map(it => {
-                    const isEq = S.eq.gun === it.id;
-                    return `<div class="it ${it.r}${isEq ? ' eq' : ''}">
-                      <div class="i">${it.icon}</div>
-                      <div class="r${it.r}">${esc(it.name)}</div>
-                      <div class="s">${it.cat.toUpperCase()}</div>
-                      <button class="sm ${isEq ? 'alt' : ''}" onclick="S.eq.gun=${it.id};save();SFX.equip();render()">${isEq ? 'EQUIPPED' : 'EQUIP'}</button>
-                    </div>`;
-                  }).join('')}
-                </div>
-              </div>
-            </div>
-          </div>`;
-      } else if (activePage === 'maps') {
-        pageHtml = `
-          <div class="pg">
-            <div class="ph">
-              <button class="bk" onclick="activePage=null;render()">←</button>
-              <h1>🗺️ SELECT BATTLE MAP</h1>
-            </div>
-            <div class="pb">
-              <div class="ct">
-                ${MAPS.map(mp => `
-                  <div class="mcard${S.map === mp.id ? ' on' : ''}" onclick="S.map='${mp.id}';save();SFX.click();render()">
-                    <div>
-                      <b style="color:var(--y)">${esc(mp.name)}</b>
-                      <div class="s">${esc(mp.desc)}</div>
-                    </div>
-                    <span class="sm ${S.map === mp.id ? '' : 'alt'}">${S.map === mp.id ? 'ACTIVE' : 'SELECT'}</span>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-          </div>`;
-      }
+const MAPS=[
+  {id:'firing_range',name:'Firing Range',tier:'Basic Map',sky:0x6db3f2,ground:0x4b6332,road:0x2b303a,desc:'Tactical base with paved highway, two-story houses, containers, and fortified perimeter walls.',unlock:0,cost:0,bonus:'+10% Match XP'},
+  {id:'nuketown',name:'Nuketown Ops',tier:'Normal Map',sky:0x89c4f4,ground:0x8c734b,road:0x32363f,desc:'Desert test compound with central boulevard, twin houses, and armored perimeter barriers.',unlock:2,cost:100,bonus:'+15% Match Credits'},
+  {id:'standoff',name:'Standoff',tier:'Tactical Map',sky:0xd98a5f,ground:0x44523c,road:0x262b33,desc:'Golden-hour border town with brick townhouses, main road intersection, and supply drops.',unlock:4,cost:250,bonus:'+20% Key Drop'},
+  {id:'shipment',name:'Shipment 1944',tier:'Arena Map',sky:0x5a7694,ground:0x3a414c,road:0x222730,desc:'Fortified dockyard container compound with watchtowers and high-speed close quarters.',unlock:6,cost:500,bonus:'+10 CP Win Bonus'}
+];
+const MODES=['5-Player Squad Battle','Team Deathmatch','Co-Op Squad Raid','Hardpoint'];
 
-      ui.innerHTML = `
-        <div class="top">
-          <div class="me">
-            <div class="av">🪖</div>
-            <div>
-              <b>${esc(S.name)}</b> <small>LV.${S.lvl}</small>
-              <div class="bar"><i style="width:${xpPct}%"></i></div>
-              <div class="tlcur">
-                <b>🪙 ${S.coins}</b>
-                <b class="cp">💎 ${S.cp} CP</b>
-              </div>
-            </div>
-          </div>
-          <div class="cur">
-            <button class="cfg" onclick="if(typeof toggleArenaFullscreen==='function')toggleArenaFullscreen()" title="Fullscreen">⛶</button>
-            <button class="cfg" onclick="openSettingsModal()">⚙️ SETTINGS</button>
-          </div>
-        </div>
+const TITLES=['Rookie','Grinder','Challenger','Veteran','Elite','Master','Champion','Legend'];
+const DIFF={Easy:[20,10,0],Medium:[40,20,5],Hard:[80,40,15],Boss:[200,100,50]};
+const MS=[[2,'🪙','100 Credits'],[4,'🗝️','2 Keys + 15 CP'],[6,'🎁','3 Keys + 30 CP']];
+const LOGIN_REW=[[50,0,0,'50 🪙'],[0,1,0,'1 🗝️'],[0,0,25,'25 💎 CP'],[120,0,0,'120 🪙'],[0,2,30,'2 🗝️ + 30 💎'],[250,0,0,'250 🪙'],[100,3,100,'100 💎 CP + 3 🗝️']];
+const ACHS=[
+  {id:'first_m',n:'First Mission',d:'Complete 1 real-life mission',cp:25,k:1,cur:s=>s.total||0,max:1},
+  {id:'win1',n:'Arena Winner',d:'Win 1 match in the 3D Battle Map',cp:40,k:2,cur:s=>s.wins||0,max:1},
+  {id:'streak3',n:'3-Day Streak',d:'Maintain a 3-day mission streak',cp:50,k:2,cur:s=>s.streak||0,max:3},
+  {id:'col5',n:'Gear Collector',d:'Unlock 5 items in Store or Draw',cp:60,k:3,cur:s=>Object.keys(s.owned).length,max:5}
+];
+const CHAT=['[SQUAD] Build up to a 5-Member Tactical Squad in the Home Lobby with live Mic & Speaker!','[TIP] Right-click in 3D Battle Arena (or tap 🎯) to Scope / ADS in!','[SYNC] See your teammates move, switch guns, throw grenades & fire live in the 3D Arena','[HUD] Customize Fire, Scope, Jump, Gun Switch & Joystick in Settings → Custom HUD'];
 
-        <div class="col L">
-          <button class="ban" onclick="activePage='loadout';SFX.click();render()">
-            🔫 GUNSMITH LOADOUT
-            <small>${esc(curGun.name)}</small>
-          </button>
-          <button class="ban login" onclick="if(typeof openHudEditor==='function')openHudEditor()">
-            🎛️ CUSTOM HUD
-            <small>MOVE & RESIZE ALL BUTTONS</small>
-          </button>
-        </div>
+const KEY='levelupLife.v1';let OFF=0;try{OFF=+localStorage.getItem('lul.off')||0}catch(e){}
+const now=()=>new Date(Date.now()+OFF),today=()=>now().toLocaleDateString('en-CA'),yest=()=>{const d=now();d.setDate(d.getDate()-1);return d.toLocaleDateString('en-CA')};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S,pg='',tb='',ci=0,shRar='ALL',focusState=null,focusInt=null,wakeLock=null;const ui=document.getElementById('ui');
 
-        <div class="col Rr">
-          <button class="mode" onclick="activePage='maps';SFX.click();render()">
-            MULTIPLAYER 3D
-            <small>MAP: ${esc(map.name)}</small>
-          </button>
-        </div>
+function defHud(){
+  return{
+    joy:{x:3,y:64,s:100,o:95},
+    fire:{x:85,y:60,s:110,o:95},
+    scope:{x:85,y:38,s:95,o:92},
+    jump:{x:74,y:73,s:95,o:90},
+    reload:{x:74,y:52,s:95,o:90},
+    grenade:{x:63,y:56,s:88,o:90},
+    wswitch:{x:62,y:74,s:95,o:90},
+    cam:{x:82,y:16,s:95,o:90},
+    minimap:{x:3,y:24,s:92,o:90}
+  };
+}
+function defCfg(){return{sfx:1,vol:85,bgm:0,vib:1,gfx:'High',fps:60,showFps:0,sens:100,gyro:1,rot:1,tod:'auto',hud:defHud()}}
+function fresh(){return{name:'Player',id:'ID'+Math.floor(1e7+Math.random()*9e7),createdAt:Date.now(),lvl:1,xp:0,coins:100,cp:150,keys:3,tokens:0,streak:0,last:'',pity:0,opens:0,owned:{0:1,3:1},friends:[],tcount:{d:'',n:0},eq:{gun:3,skin:-1,char:-1},ms:{d:'',c:[]},lr:[],reg:0,total:0,wins:0,rev:0,wp:'default',
+  map:'firing_range',mode:'5-Player Squad Battle',umaps:{firing_range:1},login:{d:'',day:0},ach:[],focusMins:0,cfg:defCfg(),
+  quests:[{id:1,n:'Wash clothes',d:'Easy',mins:15,done:''},{id:2,n:'Study 1 focused hour',d:'Medium',mins:60,done:''},{id:3,n:'Prepare notes',d:'Medium',mins:25,done:''},{id:4,n:'Work on my website 1 hour',d:'Hard',mins:60,done:''},{id:5,n:'Finish website v1 and deploy',d:'Boss',mins:90,done:''}]}}
+function load(){
+  try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+  const wasMissingCreated=!S||!S.createdAt;
+  S=Object.assign(fresh(),S||{});
+  if(wasMissingCreated){S.createdAt=Date.now();lsave()}
+  if(typeof S.cp!=='number')S.cp=150;
+  if(typeof S.wins!=='number')S.wins=0;
+  S.cfg=Object.assign(defCfg(),S.cfg||{});
+  S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});
+  S.umaps=Object.assign({firing_range:1},S.umaps||{});
+  S.login=Object.assign({d:'',day:0},S.login||{});
+  if(!Array.isArray(S.ach))S.ach=[];
+}
+function lsave(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){S.rev=(S.rev||0)+1;lsave();cloudSoon()}
+const need=l=>100+(l-1)*50,pick=a=>a[Math.floor(Math.random()*a.length)];
+function toast(m){const t=document.createElement('div');t.className='toast';t.innerHTML=m;document.body.appendChild(t);setTimeout(()=>t.remove(),2900)}
+function addXP(n){S.xp+=n;let up=0;while(S.xp>=need(S.lvl)){S.xp-=need(S.lvl);S.lvl++;S.keys+=2;S.coins+=50;S.cp+=15;up++}if(up){SFX.lvlup();toast('LEVEL UP! Level '+S.lvl+' · +2 🗝️ +50 🪙 +15 💎 CP')}}
+function nToday(){return S.tcount.d===today()?S.tcount.n:0}
+function ms(){if(S.ms.d!==today())S.ms={d:today(),c:[]};return S.ms}
 
-        <div class="lob-tags">
-          <div class="ltag host">
-            <span class="rk-b">★ SQUAD LEADER</span>
-            <b>${esc(S.name)}</b>
-            <small>${esc(curGun.name)}</small>
-          </div>
-        </div>
+function accountHours(){
+  const msElapsed=Math.max(0,Date.now()-(S.createdAt||Date.now()));
+  const hrs=msElapsed/3600000;
+  if(hrs<1){const mins=Math.floor(msElapsed/60000);return hrs.toFixed(2)+'h ('+mins+'m)'}
+  return hrs.toFixed(1)+' hrs';
+}
 
-        <div class="bot">
-          <button class="nb" onclick="activePage='loadout';SFX.click();render()">🎒 LOADOUT</button>
-          <button class="nb" onclick="if(typeof openHudEditor==='function')openHudEditor()">🎛️ HUD</button>
-          <button class="nb mapb" onclick="activePage='maps';SFX.click();render()">
-            MAP
-            <small>${esc(map.name)}</small>
-          </button>
-          <div class="tick">⚡ READY FOR DEPLOYMENT · WHEEL: SCROLL GUNS · SNIPER: HOLD FIRE TO SCOPE, RELEASE TO SHOOT</div>
-          <button class="nb big" onclick="startMatch()">START</button>
-        </div>
-        ${pageHtml}
-      `;
-    }
+function doQuest(id,bonusCp=0){
+  const q=S.quests.find(x=>x.id===id),t=today();if(!q||q.done===t||q.done==='forever')return;
+  const [xp,co,cp]=DIFF[q.d]||[40,20,5];
+  q.done=q.d==='Boss'?'forever':t;
+  if(S.last!==t){S.streak=S.last===yest()?S.streak+1:1;S.last=t}
+  if(S.tcount.d!==t)S.tcount={d:t,n:0};S.tcount.n++;S.total=(S.total||0)+1;
+  const sb=Math.min(S.streak,7)*2,totCo=co+sb,totCp=cp+bonusCp;
+  S.coins+=totCo;S.cp+=totCp;
+  let m='+'+xp+' XP · +'+totCo+' 🪙'+(totCp?' · +'+totCp+' 💎 CP':'');
+  const r=Math.random();let k=r<.6?1:0;if(r>.9)k=3;if(q.d==='Boss')k+=2;
+  S.keys+=k;if(k)m+=' · +'+k+' 🗝️'+(k===3?' JACKPOT!':'');
+  SFX.quest();addXP(xp);toast(m);save();render();
+}
+function claimMs(i){const m=ms();if(m.c.includes(i)||nToday()<MS[i][0])return;m.c.push(i);if(i===0)S.coins+=100;if(i===1){S.keys+=2;S.cp+=15}if(i===2){S.keys+=3;S.cp+=30}SFX.quest();save();render();toast('Milestone claimed: '+MS[i][2])}
+function addQuest(){const n=document.getElementById('qn').value.trim();if(!n)return toast('Type a mission name');const mins=Math.max(1,Math.min(240,+document.getElementById('qm').value||25));S.quests.push({id:Date.now(),n,d:document.getElementById('qd').value,mins,done:''});tb='Daily Missions';save();render()}
+function delQuest(id){if(confirm('Delete this mission?')){S.quests=S.quests.filter(q=>q.id!==id);save();render()}}
 
-    /* ===== LOBBY 3D SOLDIER PREVIEW ===== */
-    (function initLobbyPreview() {
-      const gl = document.getElementById('gl');
-      if (!gl || typeof THREE === 'undefined') return;
-      try {
-        const renderer = new THREE.WebGLRenderer({ canvas: gl, antialias: true, alpha: true });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-        const scene = new THREE.Scene();
-        const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 50);
-        cam.position.set(0, 1.45, 3.6);
-        cam.lookAt(0, 1.05, 0);
+/* ===== EXIT SCREEN (YES / NO) FOR HOME & 3D BATTLE WORLD ===== */
+function confirmExitHome(){
+  const m=document.createElement('div');m.className='modal';
+  m.innerHTML='<div class="pop L"><div class="rL">🚪 EXIT GAME</div><h2 style="margin:8px 0">LEAVE LEVEL UP LIFE OPS?</h2><p class="s" style="margin-bottom:14px">Your progress is automatically saved. Do you want to exit the app?</p><div class="row" style="justify-content:center;gap:12px"><button class="sm danger" style="min-width:6.5rem" onclick="doExitApp()">YES</button><button class="sm alt" style="min-width:6.5rem" onclick="this.closest(\'.modal\').remove()">NO</button></div></div>';
+  document.body.appendChild(m);
+}
+function doExitApp(){
+  if(SQUAD_ID)leaveSquad(true);
+  save();
+  try{window.close()}catch(e){}
+  ui.innerHTML='<div class="scr"><div class="logo">SESSION <b>SAVED</b></div><p class="s" style="margin:10px 0 16px">You can safely close this tab or press Home on your phone.</p><button class="sm" onclick="pg=\'\';render()">RE-ENTER MISSION HUB</button></div>';
+  document.querySelectorAll('.modal').forEach(x=>x.remove());
+}
+function confirmExitMatch(){
+  if(!AR)return;
+  AR.paused=1;
+  const m=document.createElement('div');m.className='modal';
+  m.innerHTML='<div class="pop M"><div class="rM">⚠️ EXIT 3D BATTLE WORLD</div><h2 style="margin:8px 0">LEAVE CURRENT MATCH?</h2><p class="s" style="margin-bottom:14px">Exiting removes your avatar from teammates\' maps immediately.</p><div class="row" style="justify-content:center;gap:8px"><button class="sm danger" onclick="this.closest(\'.modal\').remove();exitMatch(false)">YES, EXIT</button><button class="sm" onclick="this.closest(\'.modal\').remove();exitMatch(true)">EXTRACT & CLAIM</button><button class="sm alt" onclick="this.closest(\'.modal\').remove();if(AR)AR.paused=0">NO, STAY</button></div></div>';
+  document.body.appendChild(m);
+}
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-        const dir = new THREE.DirectionalLight(0xfffbeb, 1.0);
-        dir.position.set(3, 6, 4);
-        scene.add(dir);
+/* ===== FOCUS TIMER WITH SCREEN WAKE LOCK ===== */
+async function reqWake(){try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen')}catch(e){}}
+function relWake(){try{if(wakeLock){wakeLock.release();wakeLock=null}}catch(e){}}
+function startFocus(mins,qid=null,title='Deep Focus Session'){
+  if(focusInt)clearInterval(focusInt);
+  const tot=Math.max(10,Math.round(mins*60));
+  focusState={rem:tot,tot,mins,qid,title};
+  reqWake();renderFocus();
+  focusInt=setInterval(()=>{
+    if(!focusState)return;
+    focusState.rem--;
+    if(focusState.rem<=0){
+      clearInterval(focusInt);focusInt=null;relWake();
+      const doneState=focusState;focusState=null;
+      S.focusMins=(S.focusMins||0)+doneState.mins;
+      const earnedCp=Math.max(10,Math.round(doneState.mins*0.8));
+      if(doneState.qid){doQuest(doneState.qid,earnedCp)}
+      else{S.cp+=earnedCp;S.coins+=doneState.mins*2;SFX.lvlup();addXP(doneState.mins*3);toast('FOCUS COMPLETE! +'+earnedCp+' 💎 CP · +'+(doneState.mins*2)+' 🪙');save();render()}
+      const el=document.getElementById('fscr');if(el)el.remove();
+    }else renderFocus();
+  },1000);
+}
+function stopFocus(){if(confirm('Abort focus session? You will forfeit the CP reward.')){clearInterval(focusInt);focusInt=null;focusState=null;relWake();const el=document.getElementById('fscr');if(el)el.remove();toast('Focus session aborted')}}
+function renderFocus(){
+  if(!focusState)return;
+  let el=document.getElementById('fscr');
+  if(!el){el=document.createElement('div');el.id='fscr';el.className='fscr';document.body.appendChild(el)}
+  const m=String(Math.floor(focusState.rem/60)).padStart(2,'0'),s=String(focusState.rem%60).padStart(2,'0');
+  const pct=Math.round((1-focusState.rem/focusState.tot)*100);
+  el.innerHTML='<div class="s" style="color:var(--y)">🔒 SCREEN WAKE LOCK ACTIVE</div><h2 style="margin-top:6px">'+esc(focusState.title)+'</h2><div class="ftm">'+m+':'+s+'</div><div class="bar" style="width:min(340px,75vw);height:.6rem"><i style="width:'+pct+'%"></i></div><p class="s" style="margin:10px 0 18px">Stay locked in until 00:00 to claim XP, Credits & CP (💎)</p><button class="sm danger" onclick="stopFocus()">ABORT SESSION</button>';
+}
 
-        const ped = new THREE.Mesh(
-          new THREE.CylinderGeometry(1.05, 1.15, 0.14, 24),
-          new THREE.MeshLambertMaterial({ color: 0x1e293b })
-        );
-        ped.position.y = -0.07;
-        scene.add(ped);
+/* ===== DAILY LOGIN & ACHIEVEMENTS ===== */
+const canLogin=()=>S.login.d!==today();
+function claimLogin(){
+  if(!canLogin())return toast('Already checked in today! Come back tomorrow.');
+  const idx=S.login.day%7,[co,k,cp,lbl]=LOGIN_REW[idx];
+  S.login={d:today(),day:S.login.day+1};S.coins+=co;S.keys+=k;S.cp+=cp;
+  SFX.quest();save();render();toast('Day '+(idx+1)+' Check-In Claimed: '+lbl);
+}
+function claimAch(id){
+  const a=ACHS.find(x=>x.id===id);if(!a||S.ach.includes(id)||a.cur(S)<a.max)return;
+  S.ach.push(id);S.cp+=a.cp;S.keys+=a.k;SFX.lvlup();save();render();toast('Medal Claimed: '+a.n+' (+'+a.cp+' 💎 CP, +'+a.k+' 🗝️)');
+}
 
-        const ring = new THREE.Mesh(
-          new THREE.RingGeometry(1.06, 1.14, 32),
-          new THREE.MeshBasicMaterial({ color: 0xf5d300, side: THREE.DoubleSide })
-        );
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0.01;
-        scene.add(ring);
+function roll(){let r;if(S.pity>=9)r=Math.random()<.25?'M':Math.random()<.65?'L':'E';else{let x=Math.random()*100,a=0;r='C';for(const k of'CRELM'){a+=RAR[k].w;if(x<a){r=k;break}}}return pick(ITEMS.filter(i=>i.r===r))}
+function openCrate(){if(S.keys<1)return toast('No keys. Finish missions or buy one in the Store.');S.keys--;S.opens++;const it=roll();if(it.r==='E'||it.r==='L'||it.r==='M')S.pity=0;else S.pity++;
+const dupe=S.owned[it.id]>0;S.owned[it.id]=(S.owned[it.id]||0)+1;if(dupe){if(it.r==='M'||it.r==='L')S.cp+=Math.round(RAR[it.r].dupe/2);else S.coins+=RAR[it.r].dupe}save();
+SFX.shake();document.getElementById('bx').classList.add('shake');document.getElementById('ob').disabled=true;
+setTimeout(()=>{SFX.loot(it.r);showReveal(it,dupe?'Duplicate +'+(it.r==='M'||it.r==='L'?Math.round(RAR[it.r].dupe/2)+' 💎 CP':RAR[it.r].dupe+' 🪙'):'NEW UNLOCK!')},1100)}
 
-        let lobbyModel = null;
-        if (THREE.GLTFLoader) {
-          new THREE.GLTFLoader().load(
-            'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb',
-            gltf => {
-              GLTF_CACHE.soldier = gltf;
-              lobbyModel = gltf.scene;
-              lobbyModel.scale.setScalar(1.05);
-              scene.add(lobbyModel);
-            }
-          );
-        }
+function showReveal(it,sub){
+  const m=document.createElement('div');m.className='modal';m.onclick=()=>{m.remove();render()};
+  m.innerHTML='<div class="pop '+it.r+'"><div class="r'+it.r+'">'+RAR[it.r].n+(it.r==='M'?' 🔥 MYTHIC':it.r==='L'?' ✨':'')+'</div><div class="big">'+ic(it)+'</div><h2>'+esc(it.name)+'</h2><div class="s">'+it.type+' · '+sub+'</div><p class="s" style="margin-top:12px">Tap anywhere to continue</p></div>';
+  document.body.appendChild(m);
+}
 
-        function resizeLobby() {
-          const w = Math.max(1, isPortrait() ? window.innerHeight : window.innerWidth);
-          const h = Math.max(1, isPortrait() ? window.innerWidth : window.innerHeight);
-          renderer.setSize(w, h, false);
-          cam.aspect = w / h;
-          cam.updateProjectionMatrix();
-        }
-        resizeLobby();
-        window.addEventListener('resize', resizeLobby);
+function buyKey(n=1,cost=50){if(S.coins<cost)return toast('Need '+cost+' 🪙');S.coins-=cost;S.keys+=n;SFX.coin();save();render();toast('Bought '+n+' Crate Key'+(n>1?'s':'')+'!')}
+function buyItem(id){
+  const it=ITEMS[id],info=RAR[it.r];if(S.owned[id])return;
+  if(info.cur==='cp'){if(S.cp<info.price)return toast('Need '+info.price+' 💎 CP');S.cp-=info.price}
+  else{if(S.coins<info.price)return toast('Need '+info.price+' 🪙');S.coins-=info.price}
+  S.owned[id]=1;
+  if(it.type==='Bundle'){
+    const pool=ITEMS.filter(x=>x.type!=='Bundle'&&!S.owned[x.id]);
+    const bonus=pool.slice(0,2);bonus.forEach(b=>S.owned[b.id]=1);
+    S.keys+=it.r==='M'?4:it.r==='L'?2:1;
+    SFX.loot(it.r);save();
+    showReveal(it,'Bundle Unpacked! +'+(bonus.length?bonus.map(b=>b.name).join(' & '):'200 🪙')+' + Keys');
+    return;
+  }
+  SFX.loot(it.r);save();render();toast('Unlocked '+it.name+'!');
+}
+function equip(t,id){S.eq[t]=id;if(id>=0)SFX.equip(t,ITEMS[id].r);save();look();render()}
+function inspectItem(id){
+  const it=ITEMS[id],owned=S.owned[id],on=S.eq[it.type.toLowerCase()]===id;
+  const base={C:42,R:60,E:76,L:90,M:99}[it.r];
+  const st=it.type==='Gun'?[['DAMAGE',base],['FIRE RATE',Math.min(100,base+((id*7)%15)-5)],['ACCURACY',Math.min(100,base+((id*11)%14)-4)],['MOBILITY',Math.min(100,base+((id*5)%16)-6)]]:[['ARMOR',base],['STEALTH',Math.min(100,base+((id*9)%15)-5)],['AURA',Math.min(100,base+8)],['PRESTIGE',base]];
+  const m=document.createElement('div');m.className='modal';m.onclick=e=>{if(e.target===m)m.remove()};
+  m.innerHTML='<div class="pop '+it.r+'"><div class="r'+it.r+'">'+RAR[it.r].n+' '+it.type+'</div><div class="big">'+ic(it)+'</div><h2>'+esc(it.name)+'</h2><div style="margin:10px 0">'+st.map(x=>'<div class="sbar"><span>'+x[0]+'</span><div><i style="width:'+x[1]+'%"></i></div><b>'+x[1]+'</b></div>').join('')+'</div><div class="row" style="justify-content:center;margin-top:10px">'+(owned&&['Gun','Skin','Character'].includes(it.type)?'<button class="sm'+(on?' alt':'')+'" onclick="equip(\''+it.type.toLowerCase()+'\','+(on?-1:it.id)+');this.closest(\'.modal\').remove()">'+(on?'UNEQUIP':'EQUIP NOW')+'</button>':'')+'<button class="sm alt" onclick="this.closest(\'.modal\').remove()">CLOSE</button></div></div>';
+  document.body.appendChild(m);
+}
 
-        function tick() {
-          requestAnimationFrame(tick);
-          if (typeof AR !== 'undefined' && AR) return;
-          if (lobbyModel) lobbyModel.rotation.y += 0.006;
-          renderer.render(scene, cam);
-        }
-        tick();
-      } catch (e) {}
-    })();
+function copy(t){try{navigator.clipboard.writeText(t);toast('Copied!')}catch(e){toast('Copy failed')}}
+function setName(){const v=document.getElementById('pn').value.trim();if(v){S.name=v.slice(0,16);save();render()}}
+function importData(){try{const o=JSON.parse(document.getElementById('bk').value);if(!o.quests)throw 0;S=Object.assign(fresh(),o);S.cfg=Object.assign(defCfg(),S.cfg||{});S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});save();look();render();toast('Backup loaded')}catch(e){toast('Invalid backup')}}
+function resetAll(){if(confirm('Erase ALL local progress?')){S=fresh();save();look();go('')}}
+function setCfg(k,v){S.cfg[k]=v;if(k==='bgm')SFX.setAmb(!!v);if(k==='sfx'&&v)SFX.quest();if(k==='vib'&&v)SFX.vib(40);if(k==='gfx'||k==='tod'){applyGfx();tod()}save();render()}
+function go(p,t){pg=p;tb=t||{missions:'Daily Missions',store:'Featured',loadout:'Gun',clan:'Friends',profile:'Overview',maps:'Select Map'}[p]||'';render();if(typeof tx!=='undefined')tx=p==='loadout'?-1.5:0;if(p==='maps')setTimeout(drawMapRadar,30)}
 
-    render();
+const ICC={C:'9aa0b5',R:'4aa8ff',E:'b45cff',L:'ffb020',M:'ff2a55'};
+const IU=(n,c)=>'https://api.iconify.design/game-icons/'+n+'.svg?color=%23'+c,iconUrl=it=>IU(it.gicon,ICC[it.r]);
+const fb=e=>' onerror="this.replaceWith(document.createTextNode(\''+e+'\'))">';
+const ic=it=>'<img class="ico" alt="" src="'+iconUrl(it)+'"'+fb(it.ic),cim=(n,c,e)=>'<img class="ci" alt="" src="'+IU(n,c)+'"'+fb(e);
+const cur=()=>'<div class="cur"><span>'+cim('two-coins','f5d300','🪙')+S.coins+'</span><span style="border-color:#ff2a5588;color:#ff85a1">💎'+S.cp+'</span><span>'+cim('key','ffffff','🗝️')+S.keys+'</span><button class="cfg" aria-label="Settings" onclick="go(\'profile\',\'Settings\')">⚙️</button><button class="exitb" aria-label="Exit" onclick="confirmExitHome()">🚪 EXIT</button></div>';
+const tabsH=(a,badges={})=>'<div class="tabs">'+a.map(t=>'<button class="'+(tb===t?'on':'')+'" onclick="tb=\''+t+'\';render()">'+t+(badges[t]?' <span class="tag">'+badges[t]+'</span>':'')+'</button>').join('')+'</div>';
+const page=(title,body,half)=>'<div class="pg'+(half?' half':'')+'"><div class="ph"><button class="bk" aria-label="Back" onclick="go(\'\')">◀</button><h1>'+title+'</h1>'+cur()+'</div><div class="pb">'+body+'</div></div>';
+const activeMap=()=>MAPS.find(m=>m.id===S.map)||MAPS[0];
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
-    }
-  </script>
-  <script src="./mp-voice.js"></script>
-  <script src="./arena3d.js"></script>
-</body>
-</html>
+/* ===== SURGICAL HOME LOBBY SQUAD PATCHERS (PREVENT SCREEN FLICKER) ===== */
+function buildSqDock(){
+  const sq=squadMembers(),host=isSquadHost();
+  return '<div class="sq-dock"><div class="sq-hdr"><span>SQUAD ('+sq.length+'/5)</span><div class="sq-vbtns">'+
+    '<button class="vbtn '+(VOICE.micOn?'on':'muted')+'" title="Toggle Squad Mic" onclick="VOICE.toggleMic()">'+(VOICE.micOn?'🎙️':'🔇')+'</button>'+
+    '<button class="vbtn '+(VOICE.spkOn?'on':'muted')+'" title="Toggle Squad Speaker" onclick="VOICE.toggleSpk()">'+(VOICE.spkOn?'🔊':'🔈')+'</button>'+
+  '</div></div>'+
+    sq.map(p=>'<div class="sq-slot'+(p.isHost?' host':p.ready?'':' wait')+'"><div class="sq-av">'+esc(p.avatar)+'</div><div style="min-width:0;flex:1"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(p.speaking?'<span class="spk-dot">🗣️</span> ':'')+(p.isHost?'👑 ':'')+esc(p.name)+'</b><span style="color:'+(p.isHost?'#f5d300':p.ready?'#5be58a':'#fbbf24')+';font-size:.55rem">'+(p.isHost?'HOST':p.ready?'READY':'WAITING')+' · LV '+p.lvl+'</span></div>'+(host&&!p.me?'<button class="sm danger" style="padding:1px 5px;font-size:.58rem" title="Kick from Squad" onclick="kickSquadMember(\''+esc(p.pid)+'\')">✖</button>':'')+'</div>').join('')+
+    (sq.length<5&&host?'<div class="sq-slot empty" onclick="openInvitePicker()"><div class="sq-av">➕</div><div><b>INVITE ('+(5-sq.length)+' SLOTS)</b><div class="s" style="font-size:.54rem">BUILD 5-PLAYER TEAM</div></div></div>':'')+
+    (SQUAD_ID?'<div class="sq-acts">'+(!host?'<button class="sm'+(MY_READY?' alt':'')+'" onclick="toggleReady()">'+(MY_READY?'UNREADY':'READY')+'</button>':'')+'<button class="sm danger" onclick="leaveSquad()">🚪 LEAVE</button></div>':'')+
+  '</div>';
+}
+function buildLobTags(){
+  const sq=squadMembers();
+  return '<div class="lob-tags">'+sq.map(p=>'<div class="ltag'+(p.isHost?' host':'')+'"><div class="rk-b">'+(p.isHost?'👑 HOST':'MEMBER')+' · LV.'+p.lvl+'</div><b>'+(p.speaking?'🗣️ ':'')+esc(p.name)+'</b><small style="color:'+(p.isHost?'#f5d300':p.ready?'#5be58a':'#fbbf24')+'">'+(p.isHost?'★ LEADER':p.ready?'✔ READY':'⏳ WAIT')+'</small></div>').join('')+'</div>';
+}
+function buildStartBtn(){
+  const sq=squadMembers(),host=isSquadHost();
+  return SQUAD_ID
+    ?(host?'<button class="nb big" onclick="launchSquadMatch()">▶ START<br><small>SQUAD ('+sq.length+'/5)</small></button>'
+           :'<button class="nb big'+(MY_READY?' rdy':'')+'" onclick="toggleReady()">'+(MY_READY?'✔ READY':'⏳ READY?')+'<br><small>WAITING FOR HOST</small></button>')
+    :'<button class="nb big" onclick="startMatch()">▶ START<br><small>3D Battle Arena</small></button>';
+}
+function patchHomeSquad(){
+  const d=document.getElementById('sq-dock-wrap'),t=document.getElementById('lob-tags-wrap'),sb=document.getElementById('start-btn-wrap'),mn=document.getElementById('home-map-name');
+  if(d)d.innerHTML=buildSqDock();
+  if(t)t.innerHTML=buildLobTags();
+  if(sb)sb.innerHTML=buildStartBtn();
+  if(mn)mn.textContent=activeMap().name;
+}
+
+function home(){
+  const d=S.quests.filter(q=>q.d!=='Boss'),dn=d.filter(q=>q.done===today()).length,n=nToday(),m=ms(),cl=MS.findIndex((x,i)=>n>=x[0]&&!m.c.includes(i));
+  const achReady=ACHS.some(a=>!S.ach.includes(a.id)&&a.cur(S)>=a.max);
+
+  return '<div class="top"><div class="me"><button class="av" aria-label="Profile" onclick="go(\'profile\')">'+(S.eq.char>=0?ic(ITEMS[S.eq.char]):'🪖')+'</button><div><b>'+esc(S.name)+'</b> <small>LV '+S.lvl+' · '+TITLES[Math.min(Math.floor((S.lvl-1)/3),7)]+' · 🔥'+S.streak+'</small><div class="bar"><i style="width:'+S.xp/need(S.lvl)*100+'%"></i></div><div class="tlcur"><b>🪙 '+S.coins+'</b><b class="cp">💎 '+S.cp+' CP</b></div></div></div>'+cur()+'</div>'+
+  '<div class="clk" id="clk"></div><div class="col L"><button class="ban login" onclick="go(\'missions\',\'Daily Login\')">'+(canLogin()?'<span class="tag">CLAIM</span>':'')+'DAILY LOGIN<small>Day '+((S.login.day%7)+1)+'/7 Check-in</small></button><button class="ban" onclick="go(\'missions\')">'+(cl>=0?'<span class="tag">NEW</span>':'')+'DAILY MISSIONS<small>'+dn+'/'+d.length+' done · Chests '+n+'/6</small></button><button class="ban sale" onclick="go(\'store\',\'Guns\')"><span class="tag">MYTHIC</span>ARMORY STORE<small>Buy skins & guns with 🪙/CP</small></button>'+
+  (cl>=0?'<div class="claim">🎁 '+MS[cl][2]+'<button onclick="claimMs('+cl+')">CLAIM</button></div>':'')+'</div>'+
+  '<div id="sq-dock-wrap">'+buildSqDock()+'</div><div id="lob-tags-wrap">'+buildLobTags()+'</div>'+
+  '<div class="col Rr"><button class="mode" onclick="go(\'missions\',\'Focus Timer\')">⏱️ FOCUS TIMER<small>Earn CP (💎) + Wake Lock</small></button><button class="ban draw" onclick="go(\'crate\')" style="height:2.65rem">ARMORY DRAW<small>'+S.keys+' keys · Mythic drop</small></button><button class="mode" onclick="go(\'clan\',INBOX.length?\'Invitations\':\'Friends\')">'+(INBOX.length?'<span class="tag">'+INBOX.length+' INVITE</span>':achReady?'<span class="tag">NEW</span>':'')+'FRIENDS & SQUAD<small>Friends '+S.friends.length+' · Rank #'+rank()+'</small></button></div>'+
+  '<div class="bot"><button class="nb" onclick="go(\'store\')">🛒 STORE</button><button class="nb" onclick="go(\'loadout\')">🔫 LOADOUT</button><button class="nb" onclick="go(\'profile\',\'Safe House\')">🗂️ SAFE HOUSE</button><button class="nb" onclick="go(\'clan\')">'+(INBOX.length?'<span class="tag">'+INBOX.length+'</span>':'')+'👥 CLAN</button><div class="tick" id="tk">'+CHAT[ci%CHAT.length]+'</div><button class="nb mapb" onclick="if(SQUAD_ID&&!isSquadHost())return toast(\'Only Squad Host (👑) can change map\');go(\'maps\')"><span class="tag">TPP</span>🗺️ MAP<small id="home-map-name">'+esc(activeMap().name)+'</small></button><div id="start-btn-wrap" style="display:contents">'+buildStartBtn()+'</div></div>';
+}
+function all(){return[{n:S.name,i:S.id,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖',me:1}].concat(S.friends).sort((a,b)=>b.l-a.l||b.c-a.c)}
+const rank=()=>all().findIndex(f=>f.me)+1;
+
+function taskRow(q){const t=today(),dn=q.done===t||q.done==='forever',[xp,co,cp]=DIFF[q.d]||[40,20,5];return '<div class="task"><div class="ic">'+(q.d==='Boss'?'👹':'⚔️')+'</div><div class="g"><b>'+esc(q.n)+'</b> <span class="s">('+(q.mins||25)+'m)</span><div class="pr"><i style="width:'+(dn?100:0)+'%"></i></div><div class="s">'+q.d+' · '+xp+' XP · '+co+' 🪙'+(cp?' · '+cp+' 💎 CP':'')+'</div></div>'+(dn?'<button class="go done" disabled>✔ DONE</button>':'<button class="sm alt" onclick="startFocus('+(q.mins||25)+','+q.id+',\''+esc(q.n).replace(/'/g,'')+'\')">⏱️ FOCUS</button><button class="go" onclick="doQuest('+q.id+')">DONE</button>')+'<button class="sm alt" aria-label="Delete" onclick="delQuest('+q.id+')">🗑</button></div>'}
+
+function pMissions(){
+  const n=nToday(),m=ms();let c;
+  if(tb==='New Mission'){
+    c='<h2>Create Tactical Mission</h2><div class="row" style="margin-top:8px"><input id="qn" maxlength="50" placeholder="e.g. Build React portfolio component"></div><div class="row"><select id="qd" style="flex:1"><option>Easy</option><option selected>Medium</option><option>Hard</option><option>Boss</option></select><input id="qm" type="number" min="1" max="240" value="25" style="width:6rem" title="Focus minutes"><button class="sm" onclick="addQuest()">ADD MISSION</button></div><p class="s">Tip: Use the ⏱️ FOCUS button on any mission to run a live Screen-Wake-Lock countdown and earn extra CP (💎).</p>';
+  }else if(tb==='Focus Timer'){
+    c='<h2>Deep Focus Timer (Screen Wake Lock)</h2><p class="s" style="margin:4px 0 10px">Keeps your phone screen awake while studying or coding. Completing a session awards XP, Basic Credits (🪙), and high-level CP (💎).</p><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(9rem,1fr))">'+
+    [[15,'Quick Sprint','+12 💎 CP'],[25,'Pomodoro Ops','+20 💎 CP'],[45,'Deep Work','+36 💎 CP'],[60,'1-Hour Raid','+48 💎 CP'],[1,'1-Min Test Drill','+10 💎 CP']].map(x=>'<div class="it R" style="padding:12px 8px"><b style="font-size:1.3rem;color:var(--y)">'+x[0]+' MIN</b><div>'+x[1]+'</div><div class="s" style="margin:4px 0">'+x[2]+'</div><button class="sm" onclick="startFocus('+x[0]+',null,\''+x[1]+'\')">START</button></div>').join('')+'</div>';
+  }else if(tb==='Daily Login'){
+    const curDay=S.login.day%7;
+    c='<h2>7-Day Escalating Check-In</h2><p class="s" style="margin:4px 0 8px">Log in every day to claim Credits, Crate Keys, and high-level CP (💎).</p><div class="dgrid">'+
+    LOGIN_REW.map((r,i)=>'<div class="dcell'+(i===curDay&&canLogin()?' ok':i<curDay?' got':'')+'"><b>DAY '+(i+1)+'</b><div style="margin:6px 0;font-size:1.3rem">'+(i===6?'💎':i===2||i===4?'⚡':'🪙')+'</div><div>'+r[3]+'</div></div>').join('')+
+    '</div>'+(canLogin()?'<button class="sm" style="width:100%;padding:.7rem;margin-top:6px" onclick="claimLogin()">CLAIM DAY '+(curDay+1)+' REWARD</button>':'<div class="s" style="text-align:center;margin-top:8px">✔ Today\'s reward claimed! Next check-in unlocks at daily reset.</div>');
+  }else{
+    const ev=tb==='Daily Missions'?'<div class="ev"><div style="text-align:center"><div style="font-size:1.8rem">📈</div><b>'+n+'/6</b></div><div class="trk">'+MS.map((x,i)=>{const ok=m.c.includes(i),rd=n>=x[0];return '<div class="ms'+(rd?' ok':'')+'"><div class="bx">'+x[1]+'</div><div class="s">'+x[2]+'</div><div class="dm"><b>'+x[0]+'</b></div><br>'+(ok?'<span class="s">CLAIMED</span>':rd?'<button class="sm" onclick="claimMs('+i+')">CLAIM</button>':'')+'</div>'}).join('')+'</div></div>':'';
+    c=ev+S.quests.filter(q=>(q.d==='Boss')===(tb==='Boss Missions')).map(taskRow).join('')||'<p class="s">No missions here yet. Add one in New Mission.</p>';
+  }
+  return page('Missions · Streak 🔥'+S.streak,tabsH(['Daily Missions','Focus Timer','Daily Login','Boss Missions','New Mission'])+'<div class="ct">'+c+'</div>');
+}
+
+function pStore(){
+  let c='';
+  if(tb==='Featured'){
+    const mythics=ITEMS.filter(i=>i.r==='M');
+    c='<h2>Crate Key Shop (Basic Coins)</h2><div class="fr"><span style="font-size:1.8rem">🗝️</span><div style="flex:1"><b>1 Armory Key</b><div class="s">Open Armory Draw for random loot</div></div><button class="sm" onclick="buyKey(1,50)">50 🪙</button></div>'+
+    '<div class="fr"><span style="font-size:1.8rem">🗝️</span><div style="flex:1"><b>5 Armory Keys Pack</b><div class="s">Save 30 Basic Coins</div></div><button class="sm" onclick="buyKey(5,220)">220 🪙</button></div>'+
+    '<h2 style="margin:12px 0 6px;color:var(--M)">🔥 Mythic Showcase (CP Store)</h2>'+
+    mythics.map(i=>storeRow(i)).join('');
+  }else{
+    const map={Guns:'Gun',Characters:'Character',Skins:'Skin',Bundles:'Bundle'}[tb]||'Gun';
+    const order={C:0,R:1,E:2,L:3,M:4};
+    const list=ITEMS.filter(i=>i.type===map).sort((a,b)=>order[a.r]-order[b.r]);
+    c='<h2>'+tb+' Armory (Basic → Mythic)</h2><p class="s" style="margin-bottom:8px">Basic/Normal items use Basic Coins (🪙). Legendary & Mythic items use high-level CP (💎).</p>'+list.map(i=>storeRow(i)).join('');
+  }
+  return page('Armory Store',tabsH(['Featured','Guns','Characters','Skins','Bundles'])+'<div class="ct">'+c+'</div>');
+}
+function storeRow(i){
+  const info=RAR[i.r],owned=S.owned[i.id],isCp=info.cur==='cp';
+  return '<div class="fr '+i.r+'"><span class="sic" style="cursor:pointer" onclick="inspectItem('+i.id+')">'+ic(i)+'</span><div style="flex:1;cursor:pointer" onclick="inspectItem('+i.id+')"><b>'+esc(i.name)+'</b><div class="s r'+i.r+'">'+info.n+' '+i.type+(i.type==='Bundle'?' (Unpacks 2 Items + Keys)':'')+'</div></div>'+(owned?'<span class="s">✔ OWNED</span>':'<button class="sm'+(isCp?' cpb':'')+'" onclick="buyItem('+i.id+')">'+info.price+(isCp?' 💎 CP':' 🪙')+'</button>')+'</div>';
+}
+
+function pCrate(){const l=9-S.pity;return page('Armory Draw','<div class="ct" style="text-align:center;padding-top:.8rem"><div class="box" id="bx">🎁</div><p class="s" style="margin:8px">Keys '+S.keys+' · Draws '+S.opens+' · Epic/Legendary/Mythic guaranteed in '+(l<=0?'NEXT DRAW!':l+' draws')+'</p><button class="sm" id="ob" onclick="openCrate()">OPEN CRATE (1 🗝️)</button><p class="s" style="margin-top:12px">'+'CRELM'.split('').map(k=>'<span class="r'+k+'">'+RAR[k].n+' '+RAR[k].w+'%</span>').join(' · ')+'</p></div>')}
+
+function grid(list,mode,inspect=0){return '<div class="grid">'+list.map(i=>{const n=S.owned[i.id],on=S.eq[i.type.toLowerCase()]===i.id;return '<div class="it '+i.r+(n?'':' lock')+(on?' eq':'')+'" '+(inspect?'onclick="inspectItem('+i.id+')"':'')+'><div class="i">'+ic(i)+'</div>'+(n?'<b>'+esc(i.name)+'</b><div class="r'+i.r+'">'+RAR[i.r].n+(n>1?' x'+n:'')+'</div>'+(mode&&['Gun','Skin','Character'].includes(i.type)?'<button class="sm'+(on?' alt':'')+'" onclick="event.stopPropagation();equip(\''+i.type.toLowerCase()+'\','+(on?-1:i.id)+')">'+(on?'UNEQUIP':'EQUIP')+'</button>':''):'LOCKED<div class="r'+i.r+'">'+RAR[i.r].n+'</div>')+'</div>'}).join('')+'</div>'}
+
+function pLoadout(){const l=ITEMS.filter(i=>i.type===tb&&S.owned[i.id]);return page('Loadout (drag soldier)',tabsH(['Gun','Skin','Character'])+'<div class="ct">'+(l.length?grid(l,1,1):'<p class="s">Nothing unlocked here yet. Visit the Store or Armory Draw!</p>')+'</div>',1)}
+
+function pSafeHouse(){
+  const own=Object.keys(S.owned).length,mythics=Object.keys(S.owned).filter(id=>ITEMS[id]&&ITEMS[id].r==='M').length;
+  const g=S.eq.gun>=0?ITEMS[S.eq.gun].name:'M4 Carbine',sk=S.eq.skin>=0?ITEMS[S.eq.skin].name:'Default Rig',ch=S.eq.char>=0?ITEMS[S.eq.char].name:'Ranger';
+  let l=ITEMS.filter(i=>(tb==='All'||i.type===tb)&&(shRar==='ALL'||i.r===shRar));
+  const pills=['ALL','M','L','E','R','C'].map(r=>'<button class="'+(shRar===r?'on':'')+'" onclick="shRar=\''+r+'\';render()">'+(r==='ALL'?'ALL TIERS':RAR[r].n.toUpperCase())+'</button>').join('');
+  return '<div class="sh-hero"><div><div class="s" style="color:var(--y)">TACTICAL SAFE HOUSE SHOWCASE</div><b style="font-size:1.15rem">'+own+'/'+ITEMS.length+' UNLOCKED</b><div class="s">Mythics: '+mythics+' · Tap any card to inspect stats</div></div><div class="sh-slots"><div class="sh-slot"><div class="s">OPERATOR</div><b>'+esc(ch)+'</b></div><div class="sh-slot"><div class="s">PRIMARY</div><b>'+esc(g)+'</b></div><div class="sh-slot"><div class="s">ARMOR SKIN</div><b>'+esc(sk)+'</b></div></div></div><div class="pills">'+pills+'</div>'+grid(l,1,1);
+}
+
+/* ===== MAPS SECTION ===== */
+function selectMap(id){
+  if(SQUAD_ID&&!isSquadHost())return toast('Only the Squad Host (👑) can change the map!');
+  const m=MAPS.find(x=>x.id===id);if(!m)return;
+  if(!S.umaps[id]){
+    if(S.lvl<m.unlock)return toast('Requires Level '+m.unlock);
+    if(S.coins<m.cost)return toast('Need '+m.cost+' 🪙 to unlock '+m.name);
+    S.coins-=m.cost;S.umaps[id]=1;SFX.coin();toast('Unlocked Map: '+m.name+'!');
+  }
+  S.map=id;save();if(SQUAD_ID)pushMyPlayerDoc();render();setTimeout(drawMapRadar,20);
+}
+function drawMapRadar(){
+  const cv=document.getElementById('mcv');if(!cv)return;
+  const ctx=cv.getContext('2d'),w=cv.width=cv.offsetWidth||320,h=cv.height=165;
+  ctx.fillStyle='#060c1a';ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle='#1b3664';ctx.lineWidth=1;
+  for(let x=0;x<w;x+=20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}
+  for(let y=0;y<h;y+=20){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+  ctx.fillStyle='#334155';ctx.fillRect(w/2-14,0,28,h);ctx.fillRect(0,h/2-12,w,24);
+  ctx.fillStyle='#243b6b';ctx.strokeStyle='#4aa8ff';
+  [[w/2-75,24,46,32],[w/2+30,24,46,32],[w/2-75,h-56,46,32],[w/2+30,h-56,46,32]].forEach(b=>{
+    ctx.fillRect(b[0],b[1],b[2],b[3]);ctx.strokeRect(b[0],b[1],b[2],b[3]);
+  });
+  ctx.font='bold 10px sans-serif';ctx.textAlign='center';
+  ctx.fillStyle='#5be58a';ctx.fillText('5-PLAYER SQUAD SPAWN',w/2,h-14);
+  ctx.fillStyle='#ff2a55';ctx.fillText('6 3D SOLDIER BOTS',w/2,16);
+}
+function pMaps(){
+  const curM=activeMap();
+  const list=MAPS.map(m=>{const un=S.umaps[m.id],on=S.map===m.id;return '<div class="mcard'+(on?' on':'')+'" onclick="selectMap(\''+m.id+'\')"><div><b>'+esc(m.name)+'</b> <span class="s">('+m.tier+')</span><div class="s">'+m.bonus+'</div></div><div>'+(on?'<span style="color:var(--y);font-weight:700">ACTIVE</span>':un?'<button class="sm alt">SELECT</button>':'<button class="sm">LV '+m.unlock+' · '+m.cost+' 🪙</button>')+'</div></div>'}).join('');
+  const detail='<div style="background:#ffffff0d;padding:10px;display:flex;flex-direction:column;justify-content:space-between"><div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>'+esc(curM.name)+'</b><span class="rR">'+curM.bonus+'</span></div><canvas id="mcv"></canvas><p class="s" style="margin:8px 0">'+esc(curM.desc)+'</p></div><div><div class="row"><select onchange="S.mode=this.value;save();if(SQUAD_ID)pushMyPlayerDoc()">'+MODES.map(md=>'<option'+(S.mode===md?' selected':'')+'>'+md+'</option>').join('')+'</select><button class="sm" onclick="go(\'\');SQUAD_ID?launchSquadMatch():startMatch()">▶ DEPLOY NOW</button></div></div></div>';
+  return page('3D Battle Maps & Modes','<div class="ct"><div class="mapgrid"><div>'+list+'</div>'+detail+'</div></div>');
+}
+
+function pClan(){
+  let c;
+  if(tb==='Invitations'){
+    c='<h2>Incoming Friend Requests, Gifts & Squad Invites</h2>'+
+    (INBOX.length?INBOX.map(inv=>'<div class="fr L"><span style="font-size:1.8rem">'+(inv.fromAvatar||'📩')+'</span><div style="flex:1"><b>'+esc(inv.fromName)+'</b> <span class="s">('+esc(inv.fromPid)+')</span><div class="s">'+(inv.type==='friend_req'?'Sent you a Friend Request':inv.type==='gift'?'Sent Gift: '+esc(inv.payload?.label||''):'Invited you to their 5-Player Squad Lobby ('+esc(inv.payload?.mapName||'Firing Range')+')')+'</div></div><button class="sm" onclick="acceptInvite(\''+inv.id+'\')">'+(inv.type==='gift'?'CLAIM':inv.type==='match_invite'?'JOIN SQUAD':'ACCEPT')+'</button><button class="sm alt" onclick="declineInvite(\''+inv.id+'\')">DECLINE</button></div>').join(''):'<p class="s" style="margin-top:10px">No pending invitations. Share your Player ID (<b>'+S.id+'</b>) or invite up to 4 friends from the Friends tab!</p>');
+  }else if(tb==='Squad Lobby'){
+    const sq=squadMembers(),host=isSquadHost();
+    c='<h2>5-Player Squad Lobby ('+sq.length+'/5) · Map: '+esc(activeMap().name)+'</h2><div class="row"><button class="sm '+(VOICE.micOn?'':'alt')+'" onclick="VOICE.toggleMic()">'+(VOICE.micOn?'🎙️ MIC ON':'🔇 MIC MUTED')+'</button><button class="sm '+(VOICE.spkOn?'':'alt')+'" onclick="VOICE.toggleSpk()">'+(VOICE.spkOn?'🔊 SPEAKER ON':'🔈 SPEAKER MUTED')+'</button></div>'+
+    sq.map(m=>'<div class="fr '+(m.isHost?'L':'R')+'"><span style="font-size:1.8rem">'+esc(m.avatar||'🪖')+'</span><div style="flex:1"><b>'+(m.speaking?'🗣️ ':'')+(m.isHost?'👑 ':'')+esc(m.name)+'</b> <span class="s">('+esc(m.pid)+') · LV '+m.lvl+'</span></div><span style="color:'+(m.isHost?'#f5d300':'#5be58a')+';font-weight:700">'+(m.isHost?'HOST':m.ready?'✔ READY':'⏳ WAIT')+'</span>'+(host&&!m.me?'<button class="sm danger" onclick="kickSquadMember(\''+esc(m.pid)+'\')">KICK</button>':'')+'</div>').join('')+
+    '<div class="row" style="margin-top:12px"><button class="sm" onclick="go(\'\')">VIEW 3D SQUAD IN HOME LOBBY</button>'+(host?'<button class="sm" onclick="launchSquadMatch()">▶ START SQUAD ('+sq.length+'/5)</button>':'<button class="sm alt" onclick="toggleReady()">'+(MY_READY?'SET UNREADY':'SET READY')+'</button>')+(SQUAD_ID?'<button class="sm danger" onclick="leaveSquad()">🚪 LEAVE SQUAD</button>':'')+'</div>';
+  }else if(tb==='Leaderboard'){
+    c=all().map((f,i)=>'<div class="fr"><span style="font-size:1.8rem">'+esc(f.a)+'</span><b style="flex:1">#'+(i+1)+' '+esc(f.n)+(f.me?' (you)':'')+'</b><span class="s">Lv '+f.l+' · '+f.c+' items · 🔥'+f.s+'</span></div>').join('');
+  }else if(tb==='Cloud'){
+    c=cloudTab();
+  }else if(tb==='Backup'){
+    c='<textarea id="bk" rows="3" placeholder="Paste backup JSON to import"></textarea><div class="row" style="margin-top:8px"><button class="sm alt" onclick="document.getElementById(\'bk\').value=JSON.stringify(S)">EXPORT</button><button class="sm alt" onclick="importData()">IMPORT</button><button class="sm danger" onclick="resetAll()">RESET</button></div>';
+  }else{
+    const flist=S.friends.length?S.friends.map(f=>'<div class="fr R"><span style="font-size:1.7rem">'+esc(f.a||'🪖')+'</span><div style="flex:1"><b>'+esc(f.n)+'</b> <span class="s">('+esc(f.i)+')</span><div class="s">Lv '+f.l+' · '+f.c+' gear · 🔥'+f.s+'</div></div><button class="sm" onclick="inviteFriendToPlay(\''+esc(f.i)+'\',\''+esc(f.n).replace(/'/g,'')+'\')">🎮 INVITE TO SQUAD</button><button class="sm alt" onclick="sendGift(\''+esc(f.i)+'\',\''+esc(f.n).replace(/'/g,'')+'\',\'coins\')">🎁 50🪙</button><button class="sm cpb" onclick="sendGift(\''+esc(f.i)+'\',\''+esc(f.n).replace(/'/g,'')+'\',\'cp\')">🎁 15💎</button></div>').join(''):'<p class="s" style="margin:6px 0">No friends added yet. Enter your friend\'s Player ID below to send a live Friend Request!</p>';
+    c='<div class="fr"><div style="flex:1"><div class="s">Your Player ID (Share with up to 4 friends)</div><b style="font-size:1.1rem;color:var(--y)">'+S.id+'</b></div><button class="sm alt" onclick="copy(\''+S.id+'\')">COPY ID</button></div>'+
+    '<div class="row"><input id="fid" placeholder="Enter Friend\'s Player ID (e.g. ID61237547)"><button class="sm" onclick="sendFriendReqById()">➕ SEND FRIEND INVITE</button></div>'+
+    '<h2 style="margin:8px 0 6px">My Friends ('+S.friends.length+')</h2>'+flist+
+    '<div class="row" style="margin-top:10px"><input id="pn" value="'+esc(S.name)+'" maxlength="16"><button class="sm alt" onclick="setName()">SAVE CALLSIGN</button></div>';
+  }
+  return page('Clan, Friends & 5-Player Squad',tabsH(['Friends','Invitations','Squad Lobby','Leaderboard','Cloud','Backup'],{Invitations:INBOX.length})+'<div class="ct">'+c+'</div>');
+}
+
+function render(){if(busy||inLogin)return;if(typeof uiVisualSig==='function')_lastUiSig=uiVisualSig();const f={missions:pMissions,store:pStore,crate:pCrate,loadout:pLoadout,profile:pProfile,clan:pClan,maps:pMaps}[pg];ui.innerHTML=f?f():home()}
+const RANKS=[[1,'Rookie'],[5,'Veteran'],[10,'Elite'],[15,'Pro'],[20,'Master'],[30,'Grand Master'],[40,'Legend']],rk=l=>{let r=0;RANKS.forEach((x,i)=>{if(l>=x[0])r=i});return r},lrew=n=>n%5?[50,1,10]:[150,3,35];
+function claimLvl(n){if(S.lvl<n||S.lr.includes(n))return;const[c,k,cp]=lrew(n);S.lr.push(n);S.coins+=c;S.keys+=k;S.cp+=cp;SFX.quest();save();render();toast('Level '+n+' reward: +'+c+' 🪙 +'+k+' 🗝️ +'+cp+' 💎 CP')}
+
+function pProfile(){
+  let c;
+  if(tb==='Safe House'){c=pSafeHouse()}
+  else if(tb==='Achievements'){
+    c='<h2>Simple Milestone Medals (4)</h2><p class="s" style="margin-bottom:10px">Complete these 4 core goals to claim bonus CP (💎) and Crate Keys.</p>'+
+    ACHS.map(a=>{const got=S.ach.includes(a.id),v=Math.min(a.max,a.cur(S)),rd=v>=a.max;return '<div class="task"><div class="ic" style="font-size:1.6rem">'+(got?'🏆':'🏅')+'</div><div class="g"><b>'+a.n+'</b> <span class="s">('+v+'/'+a.max+')</span><div class="pr"><i style="width:'+(v/a.max*100)+'%"></i></div><div class="s">'+a.d+' · Reward: +'+a.cp+' 💎 CP & +'+a.k+' 🗝️</div></div>'+(got?'<button class="go done" disabled>✔ CLAIMED</button>':rd?'<button class="sm" onclick="claimAch(\''+a.id+'\')">CLAIM</button>':'<span class="s">'+v+'/'+a.max+'</span>')+'</div>'}).join('');
+  }else if(tb==='Settings'){
+    const g=S.cfg;
+    const pills=(k,arr)=>'<div class="pills" style="margin:0">'+arr.map(v=>'<button class="'+(g[k]==v?'on':'')+'" onclick="setCfg(\''+k+'\','+(typeof v==='number'?v:'\''+v+'\'')+')">'+v+'</button>').join('')+'</div>';
+    const tog=(k,t,d)=>'<div class="fr"><div style="flex:1"><b>'+t+'</b><div class="s">'+d+'</div></div><button class="sm'+(g[k]?'':' alt')+'" onclick="setCfg(\''+k+'\','+(g[k]?0:1)+')">'+(g[k]?'ON':'OFF')+'</button></div>';
+    c='<h2>1. Custom HUD & Battle Controls</h2>'+
+    '<div class="fr L"><div style="flex:1"><b>Custom HUD Layout Editor</b><div class="s">Drag & resize Jump, Fire, Scope, Gun Switch, Joystick, Reload, Grenade & Radar</div></div><button class="sm" onclick="openHudEditor()">🎛️ CUSTOMIZE HUD</button></div>'+
+    '<div class="fr"><div style="flex:1"><b>Camera & Aim Sensitivity ('+g.sens+'%)</b><div class="s">Rotation speed in Lobby and 3D Battle Arena</div></div><input type="range" min="20" max="200" value="'+g.sens+'" style="width:9rem" onchange="setCfg(\'sens\',+this.value)"></div>'+
+    tog('gyro','Gyroscope Tilt Parallax','Tilt phone to subtly pan 3D lobby camera')+
+    tog('rot','Auto-Idle Camera Sway','Smooth cinematic camera orbit in lobby')+
+    '<h2 style="margin-top:10px">2. Graphics & Frame Rate</h2>'+
+    '<div class="fr"><div style="flex:1"><b>Graphics Quality</b><div class="s">Adjusts 3D render resolution & shaders</div></div>'+pills('gfx',['Low','Medium','High','Ultra'])+'</div>'+
+    '<div class="fr"><div style="flex:1"><b>Frame Rate (FPS Cap)</b><div class="s">Target refresh rate for 3D lobby & arena</div></div>'+pills('fps',[30,60,90,120])+'</div>'+
+    tog('showFps','Real-Time FPS Counter','Show live frame-rate monitor in top clock bar')+
+    '<div class="fr"><div style="flex:1"><b>Lobby Lighting</b><div class="s">Day/Night atmospheric shader</div></div>'+pills('tod',['auto','day','night'])+'</div>'+
+    '<h2 style="margin-top:10px">3. Audio & Haptics</h2>'+
+    tog('sfx','Master Game Sound Effects','Recorded gunshots, explosions, brass victory fanfare & crowd cheers')+
+    '<div class="fr"><div style="flex:1"><b>SFX Volume ('+g.vol+'%)</b><div class="s">Master audio output level</div></div><input type="range" min="0" max="100" value="'+g.vol+'" style="width:9rem" onchange="setCfg(\'vol\',+this.value)"></div>'+
+    tog('bgm','Tactical Lobby Ambience','Low-frequency command hum')+
+    tog('vib','Phone Vibration / Haptics','Tactile feedback on taps, gunfire and crate openings')+
+    '<h2 style="margin-top:10px">4. User Account & Cloud</h2>'+
+    '<div class="fr"><div style="flex:1"><b>Account Status</b><div class="s" style="text-transform:none">'+(USER?'Signed in: '+esc(USER.email||USER.displayName):'Guest Mode (Local Storage Only)')+' · '+cst+'</div></div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm danger" onclick="AU.signOut();toast(\'Signed out\')">LOGOUT</button>':'<button class="sm" onclick="gLogin()">GOOGLE LOGIN</button>')+'</div>'+
+    '<div class="row"><input id="pn2" value="'+esc(S.name)+'" maxlength="16"><button class="sm" onclick="const v=document.getElementById(\'pn2\').value.trim();if(v){S.name=v.slice(0,16);save();render();toast(\'Callsign updated\')}">UPDATE CALLSIGN</button></div>';
+  }else{
+    const r=rk(S.lvl),nx=RANKS[r+1],lv=[];for(let n=2;n<=Math.max(12,S.lvl+5);n++){const[cc,k,cp]=lrew(n),got=S.lr.includes(n),can=S.lvl>=n;lv.push('<div class="lv'+(can?' ok':'')+'"><b>LV '+n+'</b><div>'+cc+' 🪙 · '+k+' 🗝️<br>+'+cp+' 💎 CP</div>'+(got?'<div class="s">CLAIMED</div>':can?'<button class="sm" onclick="claimLvl('+n+')">CLAIM</button>':'<div class="s">LOCKED</div>')+'</div>')}
+    const createdStr=new Date(S.createdAt||Date.now()).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+    c='<div class="rk"><div class="badge">'+(r+1)+'</div><div style="flex:1"><b style="font-size:1.15rem">'+esc(S.name)+'</b> <span class="s">'+S.id+'</span><div><b>'+RANKS[r][1]+'</b> <span class="s">Lv '+S.lvl+' · Created '+createdStr+'</span></div><div class="bar" style="width:100%"><i style="width:'+S.xp/need(S.lvl)*100+'%"></i></div><div class="s">'+S.xp+'/'+need(S.lvl)+' XP'+(nx?' · next rank '+nx[1]+' at Lv '+nx[0]:' · max rank')+'</div></div></div>'+
+    '<div class="stats"><div><b id="prof-hrs">'+accountHours()+'</b>Total Hours (Account)</div><div><b>'+(S.total||0)+'</b>Missions done</div><div><b>🏆 '+(S.wins||0)+'</b>Arena wins</div><div><b>🔥'+S.streak+'</b>Day streak</div><div><b>'+Object.keys(S.owned).length+'/'+ITEMS.length+'</b>Safe House</div><div><b>💎 '+S.cp+'</b>CP Balance</div></div>'+
+    '<h2>Ranks</h2><div class="rkl">'+RANKS.map((x,i)=>'<span class="'+(i===r?'on':'')+'">'+x[1]+' (Lv '+x[0]+')</span>').join('')+'</div><h2>Level rewards</h2><div class="track">'+lv.join('')+'</div>';
+  }
+  return page('Profile',tabsH(['Overview','Safe House','Achievements','Settings'])+'<div class="ct">'+c+'</div>');
+}
+
+/* ---------- CLOUD (Firebase Auth + Firestore) ---------- */
+let AU=null,DB=null,USER=null,cst='Local only',tmr=null,unsub=null,busy=0,inLogin=0,lastDay='';
+const TO=()=>({signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
+function cloudInit(){if(!FB_CONFIG.apiKey||typeof firebase==='undefined')return;try{firebase.initializeApp(FB_CONFIG);AU=firebase.auth();DB=firebase.firestore();
+AU.getRedirectResult().catch(e=>{if(e&&e.code)toast('Login failed: '+esc(e.code))});
+AU.onAuthStateChanged(async u=>{USER=u;if(u){cst='Signing in...';await cloudLoad();listenMultiplayer()}else{cst='Local only';if(unsub)unsub();if(unsubOutbox)unsubOutbox();if(unsubSquad)unsubSquad()}upd();safeRender(true)})}catch(e){cst='Cloud error';console.warn(e)}}
+function gLogin(){if(!AU)return toast('Cloud is not set up yet.');const p=new firebase.auth.GoogleAuthProvider();p.setCustomParameters({prompt:'select_account'});AU.signInWithPopup(p).catch(e=>{if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')AU.signInWithRedirect(p);else if(e.code!=='auth/popup-closed-by-user')toast('Login failed: '+esc(e.code||e.message))})}
+async function cloudLoad(){try{await syncClock();const d=await DB.collection('saves').doc(USER.uid).get();
+if(d.exists){const c=JSON.parse(d.data().data);if((c.rev||0)>(S.rev||0)){if((S.total||0)>0&&!confirm('Cloud save found: Level '+c.lvl+'. OK = use cloud progress. Cancel = keep THIS device and overwrite cloud.')){await cloudPush();cst='Synced ✓'}else{S=Object.assign(fresh(),c,{reg:1});if(!S.createdAt)S.createdAt=Date.now();if(typeof S.cp!=='number')S.cp=150;if(typeof S.wins!=='number')S.wins=0;S.cfg=Object.assign(defCfg(),S.cfg||{});S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});lsave();look();toast('Cloud progress loaded ☁️')}}else{S.reg=1;lsave();await cloudPush()}}
+else{if(!S.reg){S.name=(USER.displayName||'Player').split(' ')[0].slice(0,16);S.reg=1}lsave();await cloudPush()}
+cst='Synced ✓';listenFriends();if(inLogin&&S.reg){inLogin=0;loading()}}catch(e){cst='Sync failed';console.warn(e);toast('Cloud error. Check Firestore rules.')}}
+async function cloudPush(){if(!DB||!USER)return;try{cst='Saving...';upd();const b=DB.batch(),T=firebase.firestore.FieldValue.serverTimestamp();
+b.set(DB.collection('saves').doc(USER.uid),{data:JSON.stringify(S),rev:S.rev||0,dev:navigator.userAgent.slice(0,90),t:T});
+b.set(DB.collection('players').doc(USER.uid),{pid:S.id,n:S.name,l:S.lvl,c:Object.keys(S.owned).length,s:S.streak,a:S.eq.char>=0?ITEMS[S.eq.char].ic:'🪖',eq:S.eq,map:S.map,outbox:OUTBOX.slice(-20),outboxTargets:[...new Set(OUTBOX.map(o=>o.toPid))],squadId:SQUAD_ID||null,squadReady:MY_READY?1:0,squadPing:Date.now(),t:T},{merge:true});
+await b.commit();cst='Synced ✓'}catch(e){cst='Sync failed';console.warn(e)}upd()}
+function cloudSoon(){if(!USER)return;clearTimeout(tmr);cst='Saving...';tmr=setTimeout(cloudPush,2500)}
+function upd(){const e=document.getElementById('cs');if(e)e.textContent=cst}
+async function syncClock(){try{let ms;if(USER&&DB){const r=DB.collection('players').doc(USER.uid);await r.set({ping:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});ms=(await r.get({source:'server'})).data().ping.toMillis()}else{ms=(await(await fetch('https://worldtimeapi.org/api/timezone/Etc/UTC',TO())).json()).unixtime*1000}if(ms>0){OFF=ms-Date.now();try{localStorage.setItem('lul.off',OFF)}catch(e){}}}catch(e){}}
+function listenFriends(){
+  if(unsub)unsub();
+  if(!DB||!USER)return;
+  const ids=S.friends.map(f=>f.i).slice(0,10);
+  if(!ids.length)return;
+  unsub=DB.collection('players').where('pid','in',ids).onSnapshot(sn=>{
+    sn.forEach(d=>{
+      const x=d.data();
+      const f=S.friends.find(q=>q.i===x.pid);
+      if(f){f.n=x.n;f.l=x.l;f.c=x.c;f.s=x.s;f.a=x.a;f.eq=x.eq||f.eq}
+    });
+    lsave();
+    if(!AR&&(pg===''||pg==='clan'))safeRender();
+  });
+}
+async function wallpaper(){if(S.wp==='default')return null;const k='lul.wp.'+S.wp+'.'+today();try{const c=localStorage.getItem(k);if(c)return c}catch(e){}let u=null;
+try{if(S.wp==='nasa'){const j=await(await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY',TO())).json();u=j.media_type==='image'?j.url:null}
+else{const d=now(),j=await(await fetch('https://en.wikipedia.org/api/rest_v1/feed/featured/'+d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0'),TO())).json();u=j.image&&j.image.thumbnail?j.image.thumbnail.source.replace(/\/\d+px-/,'/1280px-'):null}}catch(e){}
+if(u)try{localStorage.setItem(k,u)}catch(e){}return u}
+function cloudTab(){const o=(v,t)=>'<option value="'+v+'"'+(S.wp===v?' selected':'')+'>'+t+'</option>';
+const pwaRow=isStandalone()?'<div class="fr"><div style="flex:1"><b>Android App Mode</b><div class="s">Installed & offline-ready ✓</div></div></div>':'<div class="fr"><div style="flex:1"><b>Install App on Phone</b><div class="s">Full-screen landscape + offline play ($0)</div></div><button class="sm" onclick="installApp()">'+(PWA_PROMPT?'INSTALL NOW':'HOW TO INSTALL')+'</button></div>';
+return '<div class="fr"><div style="flex:1"><b>Cloud Save</b><div class="s" id="cs">'+cst+'</div>'+(USER?'<div class="s" style="text-transform:none">'+esc(USER.email||'')+'</div>':'')+'</div>'+(USER?'<button class="sm alt" onclick="cloudPush()">SYNC NOW</button><button class="sm danger" onclick="AU.signOut()">LOGOUT</button>':'<button class="sm" onclick="gLogin()">SIGN IN WITH GOOGLE</button>')+'</div>'+pwaRow+
+'<div class="fr"><div style="flex:1"><b>Daily Wallpaper</b><div class="s">New background every day</div></div><select onchange="S.wp=this.value;save();toast(\'Applying...\');setTimeout(()=>location.reload(),700)" style="width:auto">'+o('default','Classic photo')+o('nasa','NASA space photo')+o('wiki','Wikipedia photo of the day')+'</select></div>'}
+
+/* ---------- 3D LOBBY ENGINE (5-SOLDIER V-FORMATION PLATFORM) ---------- */
+let R,SC,CAM,SOL,LOBBY_AVS=[],PR,RG,BGM,PS,tx=0,drag=0,gx=0,gy=0,tgx=0,tgy=0,rocks=[],liveFps=60,fCnt=0,fT=0;
+const GLTF_CACHE={soldier:null};
+function mat(c){return new THREE.MeshStandardMaterial({color:c,roughness:.75,metalness:.2,flatShading:true})}
+function applyGfx(){if(!R)return;const q=S.cfg.gfx||'High';const pr=q==='Low'?.75:q==='Medium'?1:q==='Ultra'?Math.min(devicePixelRatio,2.5):Math.min(devicePixelRatio,1.75);R.setPixelRatio(pr);if(PS)PS.visible=q!=='Low';if(SC&&SC.fog)SC.fog.far=q==='Low'?14:24}
+
+const V_SLOTS=[
+  {x:0,z:.45,rot:Math.PI},
+  {x:-.98,z:.05,rot:Math.PI+.14},
+  {x:.98,z:.05,rot:Math.PI-.14},
+  {x:-1.85,z:-.45,rot:Math.PI+.26},
+  {x:1.85,z:-.45,rot:Math.PI-.26}
+];
+
+function updateLobbySquad(){
+  if(!R||!SOL||!LOBBY_AVS.length)return;
+  const sq=squadMembers();
+  LOBBY_AVS.forEach((av,idx)=>{
+    const m=sq[idx];
+    if(!m){av.grp.visible=false;return}
+    av.grp.visible=true;
+    const pos=sq.length===1?{x:0,z:0,rot:Math.PI}:V_SLOTS[idx];
+    av.grp.position.set(pos.x,0,pos.z);
+    av.grp.rotation.y=pos.rot;
+    const gid=m.me?(S.eq.gun>=0?S.eq.gun:3):(m.eq&&m.eq.gun>=0?m.eq.gun:3);
+    av.setGun(gid);
+  });
+}
+
+function look(){
+  if(!R)return;
+  if(RG)RG.material.color.set(S.eq.skin>=0?RAR[ITEMS[S.eq.skin].r].c:0xf5d300);
+  updateLobbySquad();
+}
+
+function initGL(bgU,solU){if(typeof THREE==='undefined')return;try{
+R=new THREE.WebGLRenderer({canvas:document.getElementById('gl'),alpha:true,antialias:S.cfg.gfx!=='Low'});applyGfx();
+SC=new THREE.Scene();SC.fog=new THREE.Fog(0x141c38,8,22);if(bgU)new THREE.TextureLoader().load(bgU,t=>{const g=new THREE.SphereGeometry(40,48,32);g.scale(-1,1,1);BGM=new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:t,fog:false,color:0x7f8fc0}));SC.add(BGM)});CAM=new THREE.PerspectiveCamera(36,1,.1,50);CAM.position.set(0,1.65,9.0);CAM.lookAt(0,1.3,0);
+SC.add(new THREE.HemisphereLight(0x9bb0ff,0x251038,1.15));const d=new THREE.DirectionalLight(0xffffff,1.15);d.position.set(3,4,5);SC.add(d);const r=new THREE.DirectionalLight(0xa050ff,1.3);r.position.set(-4,2,-3);SC.add(r);
+SOL=new THREE.Group();SC.add(SOL);
+const pl=new THREE.Mesh(new THREE.CylinderGeometry(2.6,2.85,.22,10),mat(0x1d2748));pl.position.y=-.11;SOL.add(pl);
+const ring=new THREE.Mesh(new THREE.TorusGeometry(2.6,.04,6,10),new THREE.MeshBasicMaterial({color:0xf5d300}));RG=ring;ring.rotation.x=Math.PI/2;ring.position.y=.02;SOL.add(ring);
+
+function spawnLobbyAvatars(){
+  LOBBY_AVS.forEach(a=>SOL.remove(a.grp));
+  LOBBY_AVS=[];
+  const tints=[null,0x38bdf8,0x4ade80,0xc084fc,0xfb923c];
+  for(let i=0;i<5;i++){
+    const av=makeSoldierAvatar({armorCol:i===0?0x2e64b8:0x38bdf8,gunId:3,tint:tints[i]});
+    av.grp.visible=i===0;
+    SOL.add(av.grp);
+    LOBBY_AVS.push(av);
+  }
+  look();
+}
+spawnLobbyAvatars();
+
+if(solU&&THREE.GLTFLoader)new THREE.GLTFLoader().load(solU,g=>{GLTF_CACHE.soldier=g;spawnLobbyAvatars()},undefined,e=>console.warn('soldier model failed',e));
+
+const rm=new THREE.MeshStandardMaterial({color:0x2a3566,flatShading:true,roughness:1});
+for(let i=0;i<9;i++){const k=new THREE.Mesh(new THREE.IcosahedronGeometry(.5+Math.random()*1.3,0),rm);k.position.set(-9+Math.random()*18,-1+Math.random()*5,-3-Math.random()*8);SC.add(k);rocks.push(k)}
+const pt=new Float32Array(300);for(let i=0;i<300;i++)pt[i]=(Math.random()-.5)*(i%3==1?8:20);const pg2=new THREE.BufferGeometry();pg2.setAttribute('position',new THREE.BufferAttribute(pt,3));PS=new THREE.Points(pg2,new THREE.PointsMaterial({color:0xbcd0ff,size:.05}));PS.position.z=-2;SC.add(PS);
+
+let lx=null;
+addEventListener('pointerdown',e=>{if(AR||e.button===2||e.target.closest('button,input,select,textarea,.pg>.pb:not(.x),.sq-dock'))return;lx=normPt(e.clientX,e.clientY).x});
+addEventListener('pointermove',e=>{if(!AR&&lx!==null){const x=normPt(e.clientX,e.clientY).x,sens=(S.cfg.sens||100)/100;drag+=(x-lx)*.012*sens;lx=x}});
+addEventListener('pointerup',()=>lx=null);
+addEventListener('deviceorientation',e=>{if(S.cfg.gyro&&e.gamma!=null){const ng=Math.max(-20,Math.min(20,e.gamma))*.012,nb=Math.max(-20,Math.min(20,(e.beta||45)-45))*.006;if(Math.abs(ng-tgx)>.004)tgx=ng;if(Math.abs(nb-tgy)>.004)tgy=nb}});
+function rs(){if(document.activeElement&&/INPUT|TEXTAREA/.test(document.activeElement.tagName))return;const w=isPortrait()?innerHeight:innerWidth,h=isPortrait()?innerWidth:innerHeight;R.setSize(w,h);CAM.aspect=w/h;CAM.updateProjectionMatrix()}rs();addEventListener('resize',rs);
+const ck=new THREE.Clock();let lastDraw=0;
+(function an(t){
+  requestAnimationFrame(an);
+  if(AR)return;
+  const fpsCap=S.cfg.fps||60,minInt=1000/fpsCap;
+  if(t-lastDraw<minInt-1)return;
+  lastDraw=t;fCnt++;if(t-fT>=1000){liveFps=fCnt;fCnt=0;fT=t}
+  const sec=t*.001,dt=ck.getDelta();
+  LOBBY_AVS.forEach(a=>{if(a.grp.visible&&a.mix)a.mix.update(dt)});
+  if(BGM)BGM.rotation.y=sec*.012;
+  gx+=(tgx-gx)*.08;gy+=(tgy-gy)*.08;
+  CAM.position.x=(S.cfg.rot?Math.sin(sec*.2)*.35:0)+gx;CAM.position.y=1.65-gy;CAM.lookAt(0,1.3,0);
+  SOL.position.y=Math.sin(sec*1.6)*.03;SOL.position.x+=(tx-SOL.position.x)*.08;drag*=.985;
+  SOL.rotation.y=(S.cfg.rot?Math.sin(sec*.4)*.08:0)+drag;
+  rocks.forEach((k,i)=>{k.rotation.x=sec*.1*(i%3+1);k.rotation.y=sec*.08;k.position.y+=Math.sin(sec+i)*.0015});
+  PS.rotation.y=sec*.02;R.render(SC,CAM);
+})(0)}catch(e){console.warn('3D unavailable',e)}}
+
+const BGS=['assets/bg.jpg','https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/2294472375_24a3b8ef46_o.jpg'];
+const SOLS=['assets/soldier.glb','https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb'];
+const TIPS=['Invite up to 4 friends for a 5-Player Tactical Squad in the Home Lobby!','Use the 🎙️ Mic and 🔊 Speaker buttons on Home & Battle HUD for live voice chat!','Right-click in 3D Battle Arena (or tap 🎯) to Scope / ADS in!','Customize Fire, Scope, Jump, Gun Switch & Joystick in Settings → Custom HUD'],wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function grab(urls){for(const u of urls){try{let r=window.caches?await caches.match(u):null;if(!r){r=await fetch(u);if(!r.ok)continue;if(window.caches)try{(await caches.open('lul1')).put(u,r.clone())}catch(e){}}const b=await r.blob();return{u:URL.createObjectURL(b),mb:b.size/1048576}}catch(e){}}return null}
+function loginScr(){inLogin=1;ui.innerHTML='<div class="scr"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="s" style="margin:.3rem 0 1.1rem">Season 1 · 5-Player Tactical Squad & Real-Life Missions</div><div style="width:min(320px,72vw)"><input id="ln" maxlength="16" placeholder="Enter your callsign" value="'+(S.name!=='Player'?esc(S.name):'')+'"><button class="sm" style="width:100%;margin-top:8px;padding:.7rem" onclick="gLogin()">SIGN IN WITH GOOGLE (sync & multiplayer)</button><button class="sm alt" style="width:100%;margin-top:6px;padding:.6rem" onclick="doLogin()">PLAY AS GUEST (local device)</button><button class="sm alt" style="width:100%;margin-top:6px" onclick="impLogin()">LOAD BACKUP</button></div><div class="s" style="position:absolute;bottom:.6rem">Progress is saved automatically</div></div>'}
+function doLogin(){const v=document.getElementById('ln').value.trim();if(!v)return toast('Enter a callsign');S.name=v.slice(0,16);S.reg=1;save();loading()}
+function impLogin(){const t=prompt('Paste your backup text');if(!t)return;try{const o=JSON.parse(t);if(!o.quests)throw 0;S=Object.assign(fresh(),o,{reg:1});if(!S.createdAt)S.createdAt=Date.now();S.cfg=Object.assign(defCfg(),S.cfg||{});S.cfg.hud=Object.assign(defHud(),S.cfg.hud||{});save();loading()}catch(e){toast('Invalid backup')}}
+async function loading(){busy=1;inLogin=0;SFX.preload();ui.innerHTML='<div class="scr" id="sc"><div class="logo">LEVEL UP <b>LIFE OPS</b></div><div class="lbar"><div class="s" id="lt"></div><div class="bar" style="width:100%;height:.6rem"><i id="lb" style="width:0"></i></div><div class="s" id="tp" style="margin-top:6px"></div></div></div>';
+const sc=document.getElementById('sc'),lb=document.getElementById('lb'),lt=document.getElementById('lt');document.getElementById('tp').textContent='TIP: '+pick(TIPS);
+const tot=ITEMS.length+4;let n=0,mb=0;const st=t=>{n++;lb.style.width=Math.round(n/tot*100)+'%';lt.textContent=t+' · '+mb.toFixed(1)+' MB downloaded'};
+lt.textContent='Connecting to server...';await wait(250);await syncClock();
+const bg=await grab(BGS);if(bg){mb+=bg.mb;sc.style.backgroundImage='url('+bg.u+')'}st('Downloading environment');
+const sd=await grab(SOLS);if(sd)mb+=sd.mb;st('Downloading 3D tactical soldiers');
+await Promise.all(ITEMS.map(it=>new Promise(r=>{const i=new Image();i.onload=i.onerror=()=>{st('Downloading armory icons');r()};i.src=iconUrl(it)})));
+const wu=await wallpaper();if(wu)document.getElementById('wp').style.backgroundImage='url("'+wu+'")';st('Fetching daily wallpaper');st('Starting 3D engine');initGL(wu?null:bg&&bg.u,sd&&sd.u);await wait(450);busy=0;pg='';render();if(S.cfg&&S.cfg.bgm)SFX.setAmb(true)}
+load();cloudInit();if(S.reg)loading();else loginScr();
+setInterval(()=>{const n=now(),c=document.getElementById('clk');if(c){const e=new Date(n);e.setHours(24,0,0,0);const s=Math.max(0,Math.floor((e-n)/1000));const fpsTxt=S.cfg&&S.cfg.showFps?' · '+liveFps+' FPS':'';c.textContent='🕒 '+n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' · RESET '+[Math.floor(s/3600),Math.floor(s%3600/60),s%60].map(x=>String(x).padStart(2,'0')).join(':')+fpsTxt}const ph=document.getElementById('prof-hrs');if(ph)ph.textContent=accountHours();if(!lastDay)lastDay=today();else if(today()!==lastDay){lastDay=today();render()}},1000);
+function tod(){const m=S.cfg&&S.cfg.tod||'auto',h=now().getHours(),e=document.getElementById('tod');if(e)e.style.opacity=m==='night'?.48:m==='day'?0:h>=19||h<5?.45:h>=17||h<7?.18:0}tod();setInterval(tod,60000);
+setInterval(()=>{ci++;const t=document.getElementById('tk');if(t)t.textContent=CHAT[ci%CHAT.length]},4000);
+</script></body></html>
