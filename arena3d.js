@@ -73,7 +73,6 @@ const GUN_AUDIO = (() => {
       launcher: { punchStart: 95,  punchEnd: 22, punchDur: 0.35, noiseFilter: 1100, noiseDur: 0.48, gain: 0.46 }
     }[cat] || { punchStart: 195, punchEnd: 42, punchDur: 0.14, noiseFilter: 3200, noiseDur: 0.17, gain: 0.36 };
 
-    // Low-end breech punch
     const osc = ac.createOscillator();
     const oscGain = ac.createGain();
     osc.type = cat === 'sniper' || cat === 'shotgun' ? 'sawtooth' : 'triangle';
@@ -85,7 +84,6 @@ const GUN_AUDIO = (() => {
     osc.start(now);
     osc.stop(now + cfg.punchDur + 0.02);
 
-    // High-energy propellant blast & supersonic crack
     if (noiseBuf) {
       const ns = ac.createBufferSource();
       ns.buffer = noiseBuf;
@@ -103,7 +101,6 @@ const GUN_AUDIO = (() => {
       ns.stop(now + cfg.noiseDur + 0.02);
     }
 
-    // Mechanical action/bolt click on sniper & shotgun
     if (cat === 'sniper' || cat === 'shotgun') {
       const boltAt = now + (cat === 'sniper' ? 0.24 : 0.20);
       const bOsc = ac.createOscillator();
@@ -469,7 +466,7 @@ function createFppViewmodel() {
 
   const lArm = new THREE.Group();
   const lForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.043, 0.38, 10), sleeveMat);
-  lForearm.rotation.set(Math.PI * 0.38, -0.35, -0.22);
+  lForearm.rotation.x = Math.PI * 0.38, -0.35, -0.22;
   lForearm.position.set(-0.13, -0.13, -0.04);
   lArm.add(lForearm);
   const lWrist = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.034, 0.07, 10), skinMat);
@@ -612,7 +609,7 @@ function makeSoldierAvatar(opts = {}) {
   let mix = null, actions = {}, activeAct = null, weaponMount = null, curGunObj = null;
   let lims = null, bones = {}, axes = {}, rHandBone = null, modelRoot = null, hasSkeletal = false;
   let aimPitch = 0, firingPulse = 0, crouchLerp = 0, slideLerp = 0, reloadProg = 0, isReloading = false, weaponCat = 'ar';
-  let deathFall = 0; // 0 = alive, 0..1 = falling & settling on ground
+  let deathFall = 0;
 
   function setGun(gid) {
     if (!weaponMount) return;
@@ -655,8 +652,6 @@ function makeSoldierAvatar(opts = {}) {
   function applyRifleHoldPose() {
     if (!hasSkeletal) return;
 
-    // Smooth CODM-style low forward combat slide: torso leans slightly forward along travel (-Z),
-    // front knee drives forward and back leg trails smoothly without flipping or clipping into ground.
     const dropY = crouchLerp * 0.34 + slideLerp * 0.54;
     if (modelRoot) {
       modelRoot.position.y = -dropY;
@@ -1202,6 +1197,7 @@ function launchArenaWorld(squadId, mapCfg) {
           <button class="abtn-top loadout-btn" id="ar-loadout-btn" title="CODM Loadout Menu [B]">🎒 LOADOUT</button>
         </div>
         <div class="aright">
+          <button class="abtn-top" id="ar-settings-btn" title="Battle Settings">⚙️</button>
           <button class="abtn-top fs-btn" id="ar-fs-btn" title="Toggle Fullscreen">⛶</button>
           <button class="abtn-top ${(typeof VOICE !== 'undefined' && VOICE.micOn) ? 'on' : 'muted'}" id="ar-mic" title="Toggle Squad Mic" onclick="VOICE.toggleMic()">${(typeof VOICE !== 'undefined' && VOICE.micOn) ? '🎙️' : '🔇'}</button>
           <button class="abtn-top ${(typeof VOICE !== 'undefined' && VOICE.spkOn) ? 'on' : 'muted'}" id="ar-spk" title="Toggle Squad Speaker" onclick="VOICE.toggleSpk()">${(typeof VOICE !== 'undefined' && VOICE.spkOn) ? '🔊' : '🔈'}</button>
@@ -1453,7 +1449,6 @@ function launchArenaWorld(squadId, mapCfg) {
   });
   scene.add(playerAv.grp);
 
-  // Real physical bullets, tracers, grenades & slide dust
   const bullets = [];
   const tracers = [];
   const grenades = [];
@@ -1512,7 +1507,6 @@ function launchArenaWorld(squadId, mapCfg) {
     const w = cv.width, h = cv.height;
     ctx.clearRect(0, 0, w, h);
 
-    // Tactical blueprint grid
     ctx.strokeStyle = 'rgba(148,163,184,0.16)';
     ctx.lineWidth = 1;
     for (let x = 0; x <= w; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
@@ -1530,14 +1524,11 @@ function launchArenaWorld(squadId, mapCfg) {
       ctx.strokeRect(-130, -16, 250, 32);
       ctx.fillRect(-20, 16, 24, 34);
     } else {
-      // Stock
       ctx.beginPath();
       ctx.moveTo(-145, -18); ctx.lineTo(-75, -12); ctx.lineTo(-75, 16); ctx.lineTo(-145, 26);
       ctx.closePath(); ctx.fill(); ctx.stroke();
-      // Receiver
       ctx.fillRect(-75, -18, 105, 34);
       ctx.strokeRect(-75, -18, 105, 34);
-      // Barrel & Suppressed/Brake tip
       const bLen = spec.cat === 'sniper' ? 128 : spec.cat === 'shotgun' ? 92 : 76;
       ctx.fillRect(30, -9, bLen, 16);
       ctx.strokeRect(30, -9, bLen, 16);
@@ -1546,7 +1537,6 @@ function launchArenaWorld(squadId, mapCfg) {
         ctx.fillRect(30 + bLen, -12, 42, 22);
         ctx.strokeRect(30 + bLen, -12, 42, 22);
       }
-      // Magazine
       if (spec.cat !== 'shotgun') {
         ctx.save();
         ctx.translate(-12, 16);
@@ -1555,7 +1545,6 @@ function launchArenaWorld(squadId, mapCfg) {
         ctx.fillRect(-10, 0, 22, spec.cat === 'sniper' ? 28 : 42);
         ctx.restore();
       }
-      // Optic
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(-35, -32, spec.cat === 'sniper' ? 68 : 34, 14);
       ctx.strokeRect(-35, -32, spec.cat === 'sniper' ? 68 : 34, 14);
@@ -1654,6 +1643,84 @@ function launchArenaWorld(squadId, mapCfg) {
     } else if (isPC && AR && !AR.paused) {
       enterPcAimMode();
     }
+  }
+
+  /* ===== BATTLE WORLD SETTINGS MODAL ===== */
+  function openBattleSettings() {
+    if (!AR || AR.paused) return;
+    AR.paused = 1;
+    pcFiring = false;
+    touchFiring = false;
+    if (isPC && document.pointerLockElement === acv) {
+      try { document.exitPointerLock(); } catch (e) {}
+    }
+
+    const g = safeS.cfg;
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="pop L" style="max-width:29rem;width:92%;text-align:left">
+        <div class="rL" style="text-align:center">⚙️ BATTLE WORLD SETTINGS</div>
+        <div class="fr" style="margin-top:8px">
+          <div style="flex:1"><b>Aim Sensitivity (<span id="bs-sens-v">${g.sens || 100}</span>%)</b><div class="s">Camera & scope turn speed</div></div>
+          <input type="range" id="bs-sens" min="20" max="200" value="${g.sens || 100}" style="width:8.5rem">
+        </div>
+        <div class="fr">
+          <div style="flex:1"><b>Graphics Quality</b><div class="s">Low / Medium / High / Ultra</div></div>
+          <select id="bs-gfx" style="width:auto">
+            ${['Low', 'Medium', 'High', 'Ultra'].map(v => `<option${(g.gfx || 'High') === v ? ' selected' : ''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fr">
+          <div style="flex:1"><b>SFX Volume (<span id="bs-vol-v">${g.vol ?? 85}</span>%)</b><div class="s">Gunshots & combat audio</div></div>
+          <input type="range" id="bs-vol" min="0" max="100" value="${g.vol ?? 85}" style="width:8.5rem">
+        </div>
+        <div class="fr">
+          <div style="flex:1"><b>Vibration / Haptics</b><div class="s">Tactile feedback on action</div></div>
+          <button class="sm${g.vib ? '' : ' alt'}" id="bs-vib">${g.vib ? 'ON' : 'OFF'}</button>
+        </div>
+        <div class="row" style="justify-content:flex-end;margin-top:12px;gap:8px">
+          <button class="sm" id="bs-save">SAVE & RESUME</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const sensEl = document.getElementById('bs-sens');
+    const sensV = document.getElementById('bs-sens-v');
+    const volEl = document.getElementById('bs-vol');
+    const volV = document.getElementById('bs-vol-v');
+    const gfxEl = document.getElementById('bs-gfx');
+    const vibEl = document.getElementById('bs-vib');
+    let vibDraft = g.vib ? 1 : 0;
+
+    sensEl.oninput = () => { sensV.textContent = sensEl.value; };
+    volEl.oninput = () => { volV.textContent = volEl.value; };
+    vibEl.onclick = e => {
+      e.stopPropagation();
+      vibDraft = vibDraft ? 0 : 1;
+      vibEl.textContent = vibDraft ? 'ON' : 'OFF';
+      vibEl.className = 'sm' + (vibDraft ? '' : ' alt');
+    };
+
+    document.getElementById('bs-save').onclick = e => {
+      e.stopPropagation();
+      g.sens = +sensEl.value;
+      g.vol = +volEl.value;
+      g.gfx = gfxEl.value;
+      g.vib = vibDraft;
+      const pr = g.gfx === 'Low' ? 0.85 : g.gfx === 'Medium' ? 1.15 : Math.min(window.devicePixelRatio || 1, 1.75);
+      renderer.setPixelRatio(pr);
+      resizeArena();
+      if (typeof save === 'function') save();
+      modal.remove();
+      if (AR) {
+        AR.paused = 0;
+        prevT = performance.now();
+      }
+      if (isPC) enterPcAimMode();
+      toast('⚙️ Battle settings saved');
+    };
   }
 
   function updateHud() {
@@ -1759,7 +1826,6 @@ function launchArenaWorld(squadId, mapCfg) {
     }
   }
 
-  /* Spawn physical ballistic bullet with velocity & gravity drop */
   function fireWeapon() {
     if (!AR || AR.paused || reloading) return;
     const w = weapons[wIdx], st = wState[wIdx];
@@ -1835,7 +1901,9 @@ function launchArenaWorld(squadId, mapCfg) {
     }
   }
 
-  // Top-right Fullscreen, Gunsmith & PC Controls Close button events
+  const setBtn = document.getElementById('ar-settings-btn');
+  if (setBtn) setBtn.addEventListener('click', e => { e.stopPropagation(); openBattleSettings(); });
+
   const fsBtn = document.getElementById('ar-fs-btn');
   if (fsBtn) fsBtn.addEventListener('click', e => { e.stopPropagation(); toggleArenaFullscreen(); });
 
@@ -2352,7 +2420,6 @@ function launchArenaWorld(squadId, mapCfg) {
         fireWeapon();
       }
 
-      // Step physical bullets with gravity, obstacle collision, tracer & bot hit detection
       for (let i = bullets.length - 1; i >= 0; i--) {
         const bl = bullets[i];
         bl.life -= dt;
