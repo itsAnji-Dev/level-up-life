@@ -6,6 +6,8 @@ const PRIVATE_ROOM = {
   active: false,
   screenOpen: false,
   roomId: '',
+  joinDraft: '',
+  invitedIds: new Set(),
   isHost: false,
   mode: '1v1', // '1v1' | '2v2' | '5v5'
   mapId: 'killhouse_1v1',
@@ -694,7 +696,6 @@ function makeSoldierAvatar(opts = {}) {
   let aimPitch = 0, firingPulse = 0, crouchLerp = 0, slideLerp = 0, reloadProg = 0, isReloading = false, weaponCat = 'ar';
   let deathFall = 0;
 
-  // CODM-style glowing shoulder beacon + ground ring for unmistakable player visibility
   if (opts.showBeacon) {
     const beacon = new THREE.Mesh(
       new THREE.SphereGeometry(0.085, 8, 8),
@@ -734,14 +735,12 @@ function makeSoldierAvatar(opts = {}) {
     lastTagHp = clampedHp;
     tagCtx.clearRect(0, 0, 320, 80);
 
-    // CODM-style angled nameplate
     tagCtx.fillStyle = 'rgba(6, 12, 26, 0.86)';
     tagCtx.fillRect(14, 10, 292, 58);
     tagCtx.strokeStyle = opts.isEnemy ? '#ff2a55' : '#38bdf8';
     tagCtx.lineWidth = 3;
     tagCtx.strokeRect(14, 10, 292, 58);
 
-    // Team badge pill
     tagCtx.fillStyle = opts.isEnemy ? '#ff2a55' : '#0284c7';
     tagCtx.fillRect(22, 16, 66, 22);
     tagCtx.fillStyle = '#ffffff';
@@ -749,13 +748,11 @@ function makeSoldierAvatar(opts = {}) {
     tagCtx.textAlign = 'center';
     tagCtx.fillText(opts.isEnemy ? 'BRAVO' : 'ALPHA', 55, 31);
 
-    // Player Name
     tagCtx.fillStyle = '#f8fafc';
     tagCtx.font = 'bold 18px sans-serif';
     tagCtx.textAlign = 'left';
     tagCtx.fillText(String(labelText).slice(0, 14), 96, 33);
 
-    // Crisp HP bar
     tagCtx.fillStyle = '#1e293b';
     tagCtx.fillRect(22, 46, 276, 12);
     tagCtx.fillStyle = opts.isEnemy ? '#ff2a55' : '#22c55e';
@@ -904,9 +901,9 @@ function makeSoldierAvatar(opts = {}) {
         if (/LeftForeArm/i.test(o.name)) bones.lForeArm = o;
         if (/LeftHand$/i.test(o.name)) bones.lHand = o;
         if (/RightUpLeg/i.test(o.name)) bones.rUpLeg = o;
-        if (/RightLeg$/i.test(o.name)) bones.rLeg = o;
+        if (/RightLeg/i.test(o.name)) bones.rLeg = o;
         if (/LeftUpLeg/i.test(o.name)) bones.lUpLeg = o;
-        if (/LeftLeg$/i.test(o.name)) bones.lLeg = o;
+        if (/LeftLeg/i.test(o.name)) bones.lLeg = o;
       }
     });
 
@@ -1199,8 +1196,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     return { pid, name, lvl, gunId };
   }
 
-  // Register a live lobby bridge on AR while the Private Multiplayer slide is open
-  // so the game's built-in syncBattleState() & squadMembers() sync Ready, Team & Start over the network!
   function enableLobbyNetworkBridge() {
     if (AR && !AR.isLobby) return;
     AR = {
@@ -1250,9 +1245,11 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     const me = myPlayerInfo();
     let hostStarted = false;
 
+    const seenPids = new Set([me.pid]);
     members.forEach((m, idx) => {
       const b = m.battle || {};
       const pid = m.pid || (m.me ? me.pid : ('M_' + idx));
+      seenPids.add(pid);
       const isHostMember = !!m.isHost || (PRIVATE_ROOM.isHost && m.me);
       const team = m.me
         ? PRIVATE_ROOM.myTeam
@@ -1283,11 +1280,14 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       }
     });
 
+    Object.keys(PRIVATE_ROOM.peers).forEach(pid => {
+      if (!seenPids.has(pid)) delete PRIVATE_ROOM.peers[pid];
+    });
+
     if (PRIVATE_ROOM.screenOpen) {
       renderPrivateSlideBody();
     }
 
-    // Auto-deploy guest into the exact same 3D arena when Host clicks START!
     if (hostStarted && PRIVATE_ROOM.screenOpen && !AR_LOADING && (!AR || AR.isLobby)) {
       PRIVATE_ROOM.active = true;
       PRIVATE_ROOM.started = true;
@@ -1330,14 +1330,14 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
   }
 
   function joinRoomNow(rawCode) {
-    const code = String(rawCode || '').trim().toUpperCase();
+    const code = String(rawCode || PRIVATE_ROOM.joinDraft || '').trim().toUpperCase();
     if (!code) {
       if (typeof toast === 'function') toast('⚠️ Enter a Room ID to join');
       return;
     }
+    PRIVATE_ROOM.joinDraft = code;
     const me = myPlayerInfo();
 
-    // Populate any squad input in the DOM if the host game's joinSquad() reads from it
     const sqInp = document.getElementById('sq-inp') || document.querySelector('input[placeholder*="code" i], input[placeholder*="squad" i]');
     if (sqInp) sqInp.value = code;
 
@@ -1352,15 +1352,17 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     PRIVATE_ROOM.myTeam = 'bravo';
     PRIVATE_ROOM.myReady = false;
     PRIVATE_ROOM.started = false;
-    PRIVATE_ROOM.peers[me.pid] = {
-      pid: me.pid,
-      name: me.name,
-      lvl: me.lvl,
-      isHost: false,
-      team: 'bravo',
-      ready: false,
-      speaking: false,
-      gunId: me.gunId
+    PRIVATE_ROOM.peers = {
+      [me.pid]: {
+        pid: me.pid,
+        name: me.name,
+        lvl: me.lvl,
+        isHost: false,
+        team: 'bravo',
+        ready: false,
+        speaking: false,
+        gunId: me.gunId
+      }
     };
 
     enableLobbyNetworkBridge();
@@ -1389,13 +1391,48 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     return list;
   }
 
-  function renderSlotCard(player, teamKey, slotIdx) {
+  function getFriendsForInvite() {
+    const rawFriends = (typeof S !== 'undefined' && S && Array.isArray(S.friends))
+      ? S.friends
+      : (typeof FRIENDS !== 'undefined' && Array.isArray(FRIENDS) ? FRIENDS : []);
+
+    return rawFriends.map((f, idx) => {
+      if (typeof f === 'string') {
+        return { id: 'f_' + idx, name: f, lvl: 1, online: true };
+      }
+      return {
+        id: f.pid || f.id || ('f_' + idx),
+        name: f.name || f.username || ('FRIEND ' + (idx + 1)),
+        lvl: f.lvl || f.level || 1,
+        online: f.online !== false
+      };
+    });
+  }
+
+  function sendFriendInvite(friend) {
+    PRIVATE_ROOM.invitedIds.add(friend.id);
+    if (typeof inviteFriend === 'function') {
+      try { inviteFriend(friend.id, PRIVATE_ROOM.roomId); } catch (e) {}
+    } else if (typeof sendSquadInvite === 'function') {
+      try { sendSquadInvite(friend.id, PRIVATE_ROOM.roomId); } catch (e) {}
+    }
+
+    if (navigator.clipboard && PRIVATE_ROOM.roomId) {
+      navigator.clipboard.writeText(PRIVATE_ROOM.roomId).catch(() => {});
+    }
+    if (typeof toast === 'function') {
+      toast(`📨 Invited ${friend.name} · Room ID ${PRIVATE_ROOM.roomId} copied!`);
+    }
+    renderPrivateSlideBody();
+  }
+
+  function renderSlotCard(player, teamKey) {
     const isAlpha = teamKey === 'alpha';
     const teamCol = isAlpha ? '#38bdf8' : '#ff2a55';
     if (!player) {
       return `
-        <div class="codm-slot empty" data-team="${teamKey}" title="Click to switch to ${teamKey.toUpperCase()} team" style="width:118px;background:rgba(10,16,30,0.82);border:1px solid rgba(148,163,184,0.28);border-radius:4px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;min-height:138px;transition:border-color .15s">
-          <div style="width:62px;height:62px;border-radius:4px;background:rgba(30,41,59,0.75);display:flex;align-items:center;justify-content:center;font-size:32px;color:#475569">👤</div>
+        <div class="codm-slot empty" data-team="${teamKey}" title="Click to switch to ${teamKey.toUpperCase()} team" style="width:116px;background:rgba(10,16,30,0.82);border:1px solid rgba(148,163,184,0.28);border-radius:4px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;min-height:136px">
+          <div style="width:60px;height:60px;border-radius:4px;background:rgba(30,41,59,0.75);display:flex;align-items:center;justify-content:center;font-size:30px;color:#475569">👤</div>
           <div style="margin-top:8px;font-size:10px;font-weight:800;color:#64748b;letter-spacing:.06em">EMPTY SLOT</div>
           <div style="margin-top:2px;font-size:9px;color:${teamCol};font-weight:700">+ JOIN ${teamKey.toUpperCase()}</div>
         </div>
@@ -1409,12 +1446,12 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         : `<span style="background:rgba(245,158,11,0.18);border:1px solid #f59e0b;color:#fbbf24;font-size:9px;font-weight:900;padding:2px 6px;border-radius:3px">⏳ NOT READY</span>`;
 
     return `
-      <div class="codm-slot filled" style="width:118px;background:linear-gradient(180deg,rgba(22,33,58,0.95),rgba(10,16,30,0.96));border:2px solid ${player.ready || player.isHost ? teamCol : 'rgba(148,163,184,0.45)'};border-radius:4px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;min-height:138px;box-shadow:0 6px 18px rgba(0,0,0,0.45)">
-        <div style="width:62px;height:62px;border-radius:4px;background:linear-gradient(135deg,${isAlpha ? '#1d4ed8,#0f172a' : '#b91c1c,#0f172a'});border:1px solid ${teamCol};display:flex;align-items:center;justify-content:center;font-size:30px;position:relative">
+      <div class="codm-slot filled" style="width:116px;background:linear-gradient(180deg,rgba(22,33,58,0.95),rgba(10,16,30,0.96));border:2px solid ${player.ready || player.isHost ? teamCol : 'rgba(148,163,184,0.45)'};border-radius:4px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;min-height:136px;box-shadow:0 6px 18px rgba(0,0,0,0.45)">
+        <div style="width:60px;height:60px;border-radius:4px;background:linear-gradient(135deg,${isAlpha ? '#1d4ed8,#0f172a' : '#b91c1c,#0f172a'});border:1px solid ${teamCol};display:flex;align-items:center;justify-content:center;font-size:28px;position:relative">
           🪖
           ${player.speaking ? '<span style="position:absolute;bottom:2px;right:2px;font-size:12px">🗣️</span>' : ''}
         </div>
-        <div style="margin-top:6px;font-size:11px;font-weight:900;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:106px">
+        <div style="margin-top:6px;font-size:11px;font-weight:900;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:104px">
           ${esc(player.name)}
         </div>
         <div style="font-size:10px;color:#facc15;font-weight:800;margin-top:1px">⭐ LV ${player.lvl || 1}</div>
@@ -1427,13 +1464,19 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     const screen = document.getElementById('priv-screen');
     if (!screen) return;
 
+    const prevInp = screen.querySelector('#pm-join-inp');
+    const wasFocused = prevInp && document.activeElement === prevInp;
+    const selStart = wasFocused ? prevInp.selectionStart : null;
+    const selEnd = wasFocused ? prevInp.selectionEnd : null;
+    if (prevInp) PRIVATE_ROOM.joinDraft = prevInp.value;
+
     const roster = getRosterList();
     const alphaPlayers = roster.filter(p => p.team === 'alpha');
     const bravoPlayers = roster.filter(p => p.team === 'bravo');
     const slotsPerTeam = PRIVATE_ROOM.mode === '1v1' ? 1 : PRIVATE_ROOM.mode === '2v2' ? 2 : 5;
 
-    const alphaSlotsHtml = Array.from({ length: slotsPerTeam }).map((_, i) => renderSlotCard(alphaPlayers[i], 'alpha', i)).join('');
-    const bravoSlotsHtml = Array.from({ length: slotsPerTeam }).map((_, i) => renderSlotCard(bravoPlayers[i], 'bravo', i)).join('');
+    const alphaSlotsHtml = Array.from({ length: slotsPerTeam }).map((_, i) => renderSlotCard(alphaPlayers[i], 'alpha')).join('');
+    const bravoSlotsHtml = Array.from({ length: slotsPerTeam }).map((_, i) => renderSlotCard(bravoPlayers[i], 'bravo')).join('');
 
     const totalPlayers = roster.length;
     const readyCount = roster.filter(p => p.isHost || p.ready).length;
@@ -1448,8 +1491,30 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       { id: 'shipment', label: 'SHIPMENT 1944' }
     ];
 
+    const friendsList = getFriendsForInvite();
+    const friendsHtml = friendsList.length
+      ? friendsList.map((f, idx) => {
+          const invited = PRIVATE_ROOM.invitedIds.has(f.id);
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(15,23,42,0.92);border:1px solid rgba(148,163,184,0.22);padding:7px 8px;border-radius:3px">
+              <div style="min-width:0">
+                <div style="font-size:11px;font-weight:900;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                  <span style="color:${f.online ? '#22c55e' : '#64748b'}">●</span> ${esc(f.name)}
+                </div>
+                <div style="font-size:9px;color:#94a3b8;font-weight:700">LV ${f.lvl} · ${f.online ? 'ONLINE' : 'OFFLINE'}</div>
+              </div>
+              <button type="button" class="pm-inv-friend" data-fidx="${idx}" style="background:${invited ? '#22c55e' : '#facc15'};color:#080e1c;font-weight:900;font-size:10px;padding:5px 8px;border:none;border-radius:3px;cursor:pointer;flex-shrink:0">
+                ${invited ? '✓ SENT' : '+ INVITE'}
+              </button>
+            </div>
+          `;
+        }).join('')
+      : `<div style="font-size:11px;color:#94a3b8;text-align:center;padding:12px 6px;background:rgba(15,23,42,0.7);border-radius:3px;border:1px dashed rgba(148,163,184,0.25)">
+           No saved friends yet.<br><span style="color:#38bdf8">Use Share Room Invite above!</span>
+         </div>`;
+
     screen.innerHTML = `
-      <!-- TOP BAR (CODM PRIVATE MULTIPLAYER) -->
+      <!-- TOP BAR -->
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(7,12,24,0.94);border-bottom:1px solid rgba(56,189,248,0.28);gap:10px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:12px">
           <button type="button" id="pm-back-btn" style="background:rgba(30,41,59,0.9);border:1px solid rgba(148,163,184,0.35);color:#facc15;font-weight:900;font-size:14px;padding:6px 12px;border-radius:3px;cursor:pointer">◀ BACK</button>
@@ -1461,19 +1526,19 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         </div>
 
         <div style="display:flex;align-items:center;gap:8px">
-          <button type="button" id="pm-mic-btn" title="Toggle Team Mic" style="background:${micOn ? 'rgba(34,197,94,0.22)' : 'rgba(30,41,59,0.9)'};border:1px solid ${micOn ? '#22c55e' : 'rgba(148,163,184,0.35)'};color:#f8fafc;font-size:15px;padding:6px 11px;border-radius:3px;cursor:pointer">
+          <button type="button" id="pm-mic-btn" style="background:${micOn ? 'rgba(34,197,94,0.22)' : 'rgba(30,41,59,0.9)'};border:1px solid ${micOn ? '#22c55e' : 'rgba(148,163,184,0.35)'};color:#f8fafc;font-size:14px;padding:6px 11px;border-radius:3px;cursor:pointer">
             ${micOn ? '🎙️ MIC ON' : '🔇 MIC OFF'}
           </button>
-          <button type="button" id="pm-spk-btn" title="Toggle Team Speaker" style="background:${spkOn ? 'rgba(56,189,248,0.22)' : 'rgba(30,41,59,0.9)'};border:1px solid ${spkOn ? '#38bdf8' : 'rgba(148,163,184,0.35)'};color:#f8fafc;font-size:15px;padding:6px 11px;border-radius:3px;cursor:pointer">
+          <button type="button" id="pm-spk-btn" style="background:${spkOn ? 'rgba(56,189,248,0.22)' : 'rgba(30,41,59,0.9)'};border:1px solid ${spkOn ? '#38bdf8' : 'rgba(148,163,184,0.35)'};color:#f8fafc;font-size:14px;padding:6px 11px;border-radius:3px;cursor:pointer">
             ${spkOn ? '🔊 SPK ON' : '🔈 SPK OFF'}
           </button>
         </div>
       </div>
 
-      <!-- MAIN BODY (LEFT MATCH SETTINGS + CENTER TWO-ROW CODM TEAM SLOTS) -->
-      <div style="flex:1;display:grid;grid-template-columns:250px 1fr;gap:14px;padding:14px 16px;overflow-y:auto">
-        <!-- LEFT PANEL: MATCH SETTINGS & JOIN ROOM -->
-        <div style="background:rgba(10,16,30,0.9);border:1px solid rgba(148,163,184,0.25);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:12px">
+      <!-- 3-COLUMN CODM LOBBY: MATCH SETTINGS | TEAM SLOTS | INVITE FRIENDS -->
+      <div style="flex:1;display:grid;grid-template-columns:245px 1fr 225px;gap:14px;padding:14px 16px;overflow-y:auto">
+        <!-- LEFT: MATCH SETTINGS & JOIN ROOM -->
+        <div style="background:rgba(10,16,30,0.9);border:1px solid rgba(148,163,184,0.25);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:11px">
           <div style="background:#1e293b;padding:7px 10px;font-weight:900;font-size:12px;letter-spacing:.08em;color:#f8fafc;border-left:3px solid #facc15">
             MATCH SETTINGS
           </div>
@@ -1481,8 +1546,8 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
           <div>
             <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em;margin-bottom:5px">JOIN FRIEND'S ROOM</div>
             <div style="display:flex;gap:5px">
-              <input type="text" id="pm-join-inp" placeholder="ENTER ROOM ID" style="flex:1;min-width:0;padding:7px 8px;background:#060b16;border:1px solid rgba(56,189,248,0.45);color:#f8fafc;font-weight:800;font-size:12px;border-radius:3px">
-              <button type="button" id="pm-join-btn" style="background:#38bdf8;color:#080e1c;font-weight:900;font-size:11px;padding:0 10px;border:none;border-radius:3px;cursor:pointer">JOIN</button>
+              <input type="text" id="pm-join-inp" autocomplete="off" spellcheck="false" value="${esc(PRIVATE_ROOM.joinDraft)}" placeholder="ENTER ROOM ID" style="flex:1;min-width:0;padding:8px;background:#060b16;border:1px solid #38bdf8;color:#f8fafc;font-weight:900;font-size:12px;border-radius:3px;outline:none;user-select:text;-webkit-user-select:text">
+              <button type="button" id="pm-join-btn" style="background:#38bdf8;color:#080e1c;font-weight:900;font-size:11px;padding:0 11px;border:none;border-radius:3px;cursor:pointer">JOIN</button>
             </div>
             <button type="button" id="pm-new-btn" style="width:100%;margin-top:6px;background:rgba(250,204,21,0.14);border:1px solid rgba(250,204,21,0.45);color:#facc15;font-weight:800;font-size:11px;padding:6px;border-radius:3px;cursor:pointer">➕ CREATE NEW ROOM</button>
           </div>
@@ -1517,7 +1582,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
           </div>
         </div>
 
-        <!-- CENTER CODM TWO-ROW TEAM ROSTER -->
+        <!-- CENTER: TWO-ROW TEAM ROSTER -->
         <div style="display:flex;flex-direction:column;justify-content:center;gap:18px;padding:6px 10px">
           <div>
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -1541,14 +1606,30 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
             </div>
           </div>
         </div>
+
+        <!-- RIGHT: CODM FRIEND INVITE PANEL -->
+        <div style="background:rgba(10,16,30,0.9);border:1px solid rgba(148,163,184,0.25);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:10px">
+          <div style="background:#e2e8f0;color:#080e1c;padding:6px 10px;font-weight:900;font-size:12px;letter-spacing:.1em;text-align:center;border-radius:2px">
+            INVITE ≪
+          </div>
+
+          <button type="button" id="pm-share-invite-btn" style="background:linear-gradient(90deg,#0284c7,#2563eb);border:1px solid #38bdf8;color:#fff;font-weight:900;font-size:11px;padding:8px;border-radius:3px;cursor:pointer">
+            📤 SHARE ROOM INVITE
+          </button>
+
+          <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em">FRIENDS LIST</div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:290px">
+            ${friendsHtml}
+          </div>
+        </div>
       </div>
 
-      <!-- BOTTOM BAR (LOADOUT, STATUS, READY / START) -->
+      <!-- BOTTOM BAR -->
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:rgba(7,12,24,0.96);border-top:1px solid rgba(148,163,184,0.22);gap:12px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:10px">
           <button type="button" id="pm-loadout-btn" style="background:#1e293b;border:1px solid rgba(148,163,184,0.4);color:#f8fafc;font-weight:900;font-size:12px;padding:10px 16px;border-radius:3px;cursor:pointer">🎒 LOADOUT</button>
           <div style="background:rgba(15,23,42,0.9);border:1px solid rgba(148,163,184,0.22);padding:9px 14px;border-radius:3px;font-size:12px;color:#cbd5e1">
-            <b style="color:#facc15">[ROOM]</b> ${totalPlayers < 2 ? 'Share Room ID with your friend to join...' : `${readyCount}/${totalPlayers} Players Ready for ${PRIVATE_ROOM.mode.toUpperCase()}`}
+            <b style="color:#facc15">[ROOM]</b> ${totalPlayers < 2 ? 'Share Room ID or click + INVITE on a friend...' : `${readyCount}/${totalPlayers} Players Ready for ${PRIVATE_ROOM.mode.toUpperCase()}`}
           </div>
         </div>
 
@@ -1571,7 +1652,53 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       </div>
     `;
 
-    // Bind all Private Multiplayer controls
+    const joinInp = screen.querySelector('#pm-join-inp');
+    const joinBtn = screen.querySelector('#pm-join-btn');
+    if (joinInp) {
+      ['keydown', 'keyup', 'keypress', 'pointerdown', 'mousedown', 'click'].forEach(evt => {
+        joinInp.addEventListener(evt, e => e.stopPropagation());
+      });
+      joinInp.addEventListener('input', () => {
+        PRIVATE_ROOM.joinDraft = joinInp.value;
+      });
+      joinInp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          joinRoomNow(joinInp.value);
+        }
+      });
+      if (wasFocused) {
+        joinInp.focus();
+        if (selStart !== null && selEnd !== null) {
+          try { joinInp.setSelectionRange(selStart, selEnd); } catch (e) {}
+        }
+      }
+    }
+    if (joinBtn) {
+      joinBtn.onclick = () => joinRoomNow(joinInp ? joinInp.value : PRIVATE_ROOM.joinDraft);
+    }
+
+    screen.querySelectorAll('.pm-inv-friend').forEach(btn => {
+      btn.onclick = () => {
+        const f = friendsList[+btn.dataset.fidx];
+        if (f) sendFriendInvite(f);
+      };
+    });
+
+    const shareInvBtn = screen.querySelector('#pm-share-invite-btn');
+    if (shareInvBtn) {
+      shareInvBtn.onclick = () => {
+        const shareUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(PRIVATE_ROOM.roomId)}`;
+        const shareText = `Join my CODM Private ${PRIVATE_ROOM.mode.toUpperCase()} Room! Room ID: ${PRIVATE_ROOM.roomId}\n${shareUrl}`;
+        if (navigator.share) {
+          navigator.share({ title: 'Private Multiplayer Invite', text: shareText, url: shareUrl }).catch(() => {});
+        } else if (navigator.clipboard) {
+          navigator.clipboard.writeText(shareText).catch(() => {});
+        }
+        if (typeof toast === 'function') toast('📤 Invite Link & Room ID copied to clipboard!');
+      };
+    }
+
     const backBtn = screen.querySelector('#pm-back-btn');
     if (backBtn) backBtn.onclick = () => closePrivateSlide(false);
 
@@ -1599,12 +1726,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         if (typeof VOICE !== 'undefined' && VOICE.toggleSpk) VOICE.toggleSpk();
         setTimeout(renderPrivateSlideBody, 80);
       };
-    }
-
-    const joinInp = screen.querySelector('#pm-join-inp');
-    const joinBtn = screen.querySelector('#pm-join-btn');
-    if (joinBtn) {
-      joinBtn.onclick = () => joinRoomNow(joinInp ? joinInp.value : '');
     }
 
     const newBtn = screen.querySelector('#pm-new-btn');
@@ -1640,7 +1761,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       };
     }
 
-    // Click empty slot to switch between Alpha & Bravo team
     screen.querySelectorAll('.codm-slot.empty').forEach(slot => {
       slot.onclick = () => {
         const targetTeam = slot.dataset.team;
@@ -1657,7 +1777,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     if (loadoutBtn) {
       loadoutBtn.onclick = () => {
         if (typeof openLoadout === 'function') openLoadout();
-        else if (typeof S !== 'undefined') toast('Current Weapon Equipped — You can also customize Gunsmith [B] in-game!');
+        else if (typeof S !== 'undefined') toast('Current Weapon Equipped — Press [B] in-game for Gunsmith!');
       };
     }
 
@@ -1686,10 +1806,12 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
 
   let lobbyPollTimer = null;
 
-  function openPrivateSlide() {
+  function openPrivateSlide(autoJoinCode = '') {
     PRIVATE_ROOM.active = true;
     PRIVATE_ROOM.screenOpen = true;
-    if (!PRIVATE_ROOM.roomId) {
+    if (autoJoinCode) {
+      joinRoomNow(autoJoinCode);
+    } else if (!PRIVATE_ROOM.roomId) {
       createRoomNow();
     } else {
       enableLobbyNetworkBridge();
@@ -1710,6 +1832,11 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     lobbyPollTimer = setInterval(() => {
       if (!PRIVATE_ROOM.screenOpen) {
         clearInterval(lobbyPollTimer);
+        return;
+      }
+      const inp = document.getElementById('pm-join-inp');
+      if (inp && document.activeElement === inp) {
+        pushLobbySync();
         return;
       }
       if (typeof squadMembers === 'function') {
@@ -1735,7 +1862,11 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
 
   window.openPrivateRoom = openPrivateSlide;
 
-  // Inject button & map card into "3D BATTLE MAPS & MODES" screen
+  const urlRoom = new URLSearchParams(window.location.search).get('room');
+  if (urlRoom) {
+    setTimeout(() => openPrivateSlide(urlRoom), 450);
+  }
+
   function injectIntoBattleMapsScreen() {
     const ui = document.getElementById('ui');
     if (!ui) return;
@@ -1777,7 +1908,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
             <div style="font-weight:900;font-size:14px;color:#facc15;letter-spacing:.04em">
               🔒 PRIVATE MULTIPLAYER <span style="font-size:11px;color:#38bdf8;font-weight:800">(CODM LOBBY)</span>
             </div>
-            <div style="font-size:11px;color:#cbd5e1;margin-top:2px">1V1 / 2V2 CUSTOM ROOM · READY CHECK · VOICE</div>
+            <div style="font-size:11px;color:#cbd5e1;margin-top:2px">1V1 / 2V2 CUSTOM ROOM · FRIEND INVITE · READY CHECK</div>
           </div>
           <span style="background:#facc15;color:#080e1c;font-weight:900;font-size:11px;padding:5px 10px;border-radius:2px;letter-spacing:.05em">OPEN LOBBY</span>
         `;
@@ -2340,7 +2471,6 @@ function launchArenaWorld(squadId, mapCfg) {
     pickups.push({ mesh: m, x: pt[0], z: pt[1], isMed, cd: 0 });
   });
 
-  // Spawn Alpha Team on South Bunker (+29) and Bravo Team on North Bunker (-29)
   const spawnIsBravo = isPrivatePvP && PRIVATE_ROOM.myTeam === 'bravo';
   let px = spawnIsBravo ? -1.5 : 1.5;
   let py = 0;
@@ -2853,7 +2983,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
   function damageRemotePeer(pid, rp, amount) {
     if (!isPrivatePvP || !rp) return;
-    if (rp.team === PRIVATE_ROOM.myTeam) return; // No friendly fire
+    if (rp.team === PRIVATE_ROOM.myTeam) return;
     hitCounter++;
     pendingHit = { targetPid: pid, dmg: amount, seq: hitCounter, ts: Date.now() };
     rp.hp = Math.max(0, (rp.hp || 100) - amount);
@@ -3715,7 +3845,6 @@ function launchArenaWorld(squadId, mapCfg) {
         rp.av.update(dt);
       });
 
-      // Fast 15Hz network sync for crisp PvP visibility
       syncAccum += dt;
       if (syncAccum >= 0.07) {
         syncAccum = 0;
