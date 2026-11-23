@@ -1,10 +1,10 @@
 :root{--y:#f5d300;--bg:#0a0e1f;--pn:#141c38;--pn2:#1f2a52;--tx:#eef2ff;--mu:#8e9ac4;--C:#9aa0b5;--R:#4aa8ff;--E:#b45cff;--L:#ffb020;--M:#ff2a55;--cut:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
 *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent;user-select:none}
-html{font-size:clamp(10px,3.4vh,16px);touch-action:manipulation;overscroll-behavior:none}
+html{font-size:clamp(11px,1.85vmax,15px);touch-action:manipulation;overscroll-behavior:none}
 body{background:radial-gradient(ellipse at 62% 18%,#3d5290 0,#1a2145 42%,#080b19 85%);color:var(--tx);font-family:Bahnschrift,"Arial Narrow",Impact,sans-serif;width:100vw;height:100vh;overflow:hidden;text-transform:uppercase;letter-spacing:.03em;touch-action:manipulation}
 @media (orientation:portrait){
-  body{width:100vh;height:100vw;transform:rotate(90deg) translateY(-100%);transform-origin:top left;position:fixed;top:0;left:0}
-  html{font-size:clamp(9px,3.4vw,15px)}
+  body{width:100vmax;height:100vmin;transform:rotate(90deg) translateY(-100%);transform-origin:top left;position:fixed;top:0;left:0}
+  html{font-size:clamp(11px,1.85vmax,15px)}
 }
 #gl{position:fixed;inset:0;width:100%;height:100%;touch-action:none}
 #ui{position:fixed;inset:0;pointer-events:none}#ui button,#ui input,#ui select,#ui textarea,#ui .pg,#ui .tick,#ui .sq-dock{pointer-events:auto}
