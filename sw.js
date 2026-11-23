@@ -1,5 +1,5 @@
-/* Level Up Life Ops - Offline Service Worker v6.2 */
-const CACHE = 'lul-pwa-v6.2';
+/* Level Up Life Ops - Offline Service Worker v6.3 */
+const CACHE = 'lul-pwa-v6.3';
 const SOUNDS = [
   'https://actions.google.com/sounds/v1/weapons/rifle_fire_select.ogg',
   'https://actions.google.com/sounds/v1/tools/ejecting_a_cassette.ogg',
