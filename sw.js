@@ -1,5 +1,20 @@
-/* Level Up Life Ops - Offline Service Worker v7.0 */
-const CACHE = 'lul-pwa-v7.0';
+/* Level Up Life Ops - Offline Service Worker v6.9 */
+const CACHE = 'lul-pwa-v6.9';
+const SOUNDS = [
+  'https://actions.google.com/sounds/v1/weapons/rifle_fire_select.ogg',
+  'https://actions.google.com/sounds/v1/tools/ejecting_a_cassette.ogg',
+  'https://actions.google.com/sounds/v1/weapons/shell_casings_revolver.ogg',
+  'https://actions.google.com/sounds/v1/weapons/gun_parts_handling.ogg',
+  'https://actions.google.com/sounds/v1/weapons/rifle_charging_handle.ogg',
+  'https://actions.google.com/sounds/v1/weapons/shot_gun_handling.ogg',
+  'https://actions.google.com/sounds/v1/weapons/cocking_a_50cal_gun.ogg',
+  'https://actions.google.com/sounds/v1/weapons/gun_reload.ogg',
+  'https://actions.google.com/sounds/v1/weapons/gun_powder_ignite.ogg',
+  'https://actions.google.com/sounds/v1/weapons/explosion_large.ogg',
+  'https://actions.google.com/sounds/v1/science_fiction/suspense_builder.ogg',
+  'https://actions.google.com/sounds/v1/science_fiction/sci_fi_vortex.ogg',
+  'https://actions.google.com/sounds/v1/crowd/applause.ogg'
+];
 const CORE = [
   './',
   './index.html',
@@ -19,6 +34,7 @@ self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(async c => {
       await Promise.allSettled(CORE.map(u => c.add(new Request(u, { cache: 'reload' }))));
+      await Promise.allSettled(SOUNDS.map(u => c.add(new Request(u, { cache: 'reload' }))));
     }).then(() => self.skipWaiting())
   );
 });
