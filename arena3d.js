@@ -1,5 +1,20 @@
-/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO & CODM GUNSMITH LOADOUT ===== */
+/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO, GUNSMITH & PRIVATE 1v1/2v2 ARENA ===== */
 let AR = null;
+
+/* ===== PRIVATE ROOM STATE (1v1 / 2v2) ===== */
+const PRIVATE_ROOM = {
+  active: false,
+  roomId: '',
+  isHost: false,
+  mode: '1v1', // '1v1' | '2v2'
+  mapId: 'killhouse_1v1',
+  mapName: 'TACTICAL KILLHOUSE 1V1',
+  peers: {}
+};
+
+function genPrivateCode() {
+  return 'PVP-' + Math.floor(1000 + Math.random() * 9000);
+}
 
 (function setupSwAutoSync() {
   if (!('serviceWorker' in navigator)) return;
@@ -26,6 +41,7 @@ function shortestAngleDiff(from, to) {
 }
 
 function resolveSkyHex(rawSky, mapId) {
+  if (mapId === 'killhouse_1v1') return 0x1e2d4a;
   if (typeof rawSky === 'number' && !isNaN(rawSky)) return rawSky;
   if (typeof rawSky === 'string') {
     const clean = rawSky.trim().replace(/^#/, '').replace(/^0x/i, '');
@@ -207,8 +223,31 @@ function getArenaTextures(mapId = 'firing_range') {
 
   const isDesert = mapId === 'nuketown';
   const isDock = mapId === 'shipment';
+  const isKillhouse = mapId === 'killhouse_1v1';
 
-  const groundTex = makeCanvasTex(256, 256, (ctx, w, h) => {
+  const groundTex = makeCanvasTex(512, 512, (ctx, w, h) => {
+    if (isKillhouse) {
+      ctx.fillStyle = '#2b3445';
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < 3500; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.035)' : 'rgba(15,23,42,0.16)';
+        ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+      }
+      ctx.strokeStyle = 'rgba(15,23,42,0.55)';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(2, 2, w - 4, h - 4);
+      ctx.beginPath();
+      ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h);
+      ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(56,189,248,0.14)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(18, 18, w / 2 - 36, h / 2 - 36);
+      ctx.strokeRect(w / 2 + 18, h / 2 + 18, w / 2 - 36, h / 2 - 36);
+      return;
+    }
+
     ctx.fillStyle = isDesert ? '#9c7f54' : isDock ? '#475569' : '#4f6d34';
     ctx.fillRect(0, 0, w, h);
     for (let i = 0; i < 1600; i++) {
@@ -220,21 +259,21 @@ function getArenaTextures(mapId = 'firing_range') {
           : (Math.random() > 0.45 ? '#3f5928' : Math.random() > 0.2 ? '#658843' : '#746344');
       ctx.fillRect(x, y, 2 + Math.random() * 3, 2 + Math.random() * 4);
     }
-  }, 24, 24);
+  }, isKillhouse ? 14 : 24, isKillhouse ? 16 : 24);
 
   const roadTex = makeCanvasTex(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#2a303c';
+    ctx.fillStyle = isKillhouse ? '#1e2636' : '#2a303c';
     ctx.fillRect(0, 0, w, h);
     for (let i = 0; i < 1200; i++) {
-      ctx.fillStyle = Math.random() > 0.5 ? '#1f242e' : '#384050';
+      ctx.fillStyle = Math.random() > 0.5 ? '#161d29' : '#334155';
       ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
     }
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillRect(0, 0, 14, h);
-    ctx.fillRect(w - 14, 0, 14, h);
+    ctx.fillStyle = isKillhouse ? '#38bdf8' : '#94a3b8';
+    ctx.fillRect(0, 0, 10, h);
+    ctx.fillRect(w - 10, 0, 10, h);
     ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(20, 0, 4, h);
-    ctx.fillRect(w - 24, 0, 4, h);
+    ctx.fillRect(18, 0, 4, h);
+    ctx.fillRect(w - 22, 0, 4, h);
     ctx.fillStyle = '#facc15';
     ctx.fillRect(w / 2 - 4, 16, 3, 92);
     ctx.fillRect(w / 2 + 2, 16, 3, 92);
@@ -243,8 +282,29 @@ function getArenaTextures(mapId = 'firing_range') {
   }, 1, 14);
 
   const wallTex = makeCanvasTex(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = isDesert ? '#cfa87a' : '#78889c';
+    ctx.fillStyle = isKillhouse ? '#475569' : isDesert ? '#cfa87a' : '#78889c';
     ctx.fillRect(0, 0, w, h);
+    if (isKillhouse) {
+      for (let i = 0; i < 1200; i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.18)';
+        ctx.fillRect(Math.random() * w, Math.random() * h, 3, 3);
+      }
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, 0, w, 18);
+      ctx.fillRect(0, h - 28, w, 28);
+      for (let x = -28; x < w + 28; x += 28) {
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.moveTo(x, h - 24); ctx.lineTo(x + 14, h - 24);
+        ctx.lineTo(x + 4, h - 4); ctx.lineTo(x - 10, h - 4);
+        ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(15,23,42,0.45)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(4, 22, w - 8, h - 54);
+      return;
+    }
+
     ctx.fillStyle = 'rgba(15,23,42,0.22)';
     for (let y = 0; y < h; y += 32) ctx.fillRect(0, y, w, 2);
     for (let x = 0; x < w; x += 64) ctx.fillRect(x, 0, 2, h);
@@ -261,20 +321,23 @@ function getArenaTextures(mapId = 'firing_range') {
       ctx.fillRect(wx + 30, wy, 4, 54);
       ctx.fillRect(wx, wy + 25, 64, 4);
     });
-  }, 1, 1);
+  }, isKillhouse ? 3 : 1, 1);
 
-  const contTex = makeCanvasTex(128, 128, (ctx, w, h) => {
+  const contTex = makeCanvasTex(256, 256, (ctx, w, h) => {
     ctx.fillStyle = '#e2e8f0';
     ctx.fillRect(0, 0, w, h);
-    for (let x = 0; x < w; x += 8) {
-      ctx.fillStyle = 'rgba(255,255,255,0.28)';
-      ctx.fillRect(x, 0, 4, h);
-      ctx.fillStyle = 'rgba(15,23,42,0.36)';
-      ctx.fillRect(x + 4, 0, 4, h);
+    for (let x = 0; x < w; x += 12) {
+      ctx.fillStyle = 'rgba(255,255,255,0.34)';
+      ctx.fillRect(x, 0, 6, h);
+      ctx.fillStyle = 'rgba(15,23,42,0.42)';
+      ctx.fillRect(x + 6, 0, 6, h);
     }
-    ctx.fillStyle = 'rgba(15,23,42,0.55)';
-    ctx.fillRect(0, 0, w, 10);
-    ctx.fillRect(0, h - 10, w, 10);
+    ctx.fillStyle = 'rgba(15,23,42,0.68)';
+    ctx.fillRect(0, 0, w, 16);
+    ctx.fillRect(0, h - 16, w, 16);
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.fillRect(22, 44, 62, 10);
+    ctx.fillRect(22, 62, 40, 8);
   }, 3, 1);
 
   const crateTex = makeCanvasTex(128, 128, (ctx, w, h) => {
@@ -290,7 +353,21 @@ function getArenaTextures(mapId = 'firing_range') {
     ctx.stroke();
   }, 1, 1);
 
-  TEX_CACHE[mapId] = { groundTex, roadTex, wallTex, contTex, crateTex };
+  const deckTex = makeCanvasTex(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#475569';
+    for (let y = 0; y < h; y += 16) {
+      for (let x = (y % 32 === 0 ? 0 : 8); x < w; x += 16) {
+        ctx.fillRect(x + 2, y + 2, 10, 4);
+      }
+    }
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, w - 4, h - 4);
+  }, 4, 4);
+
+  TEX_CACHE[mapId] = { groundTex, roadTex, wallTex, contTex, crateTex, deckTex };
   return TEX_CACHE[mapId];
 }
 
@@ -466,7 +543,7 @@ function createFppViewmodel() {
 
   const lArm = new THREE.Group();
   const lForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.043, 0.38, 10), sleeveMat);
-  lForearm.rotation.x = Math.PI * 0.38, -0.35, -0.22;
+  lForearm.rotation.set(Math.PI * 0.38, -0.35, -0.22);
   lForearm.position.set(-0.13, -0.13, -0.04);
   lArm.add(lForearm);
   const lWrist = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.034, 0.07, 10), skinMat);
@@ -601,7 +678,7 @@ function createFppViewmodel() {
   return { root, setGun, triggerRecoil, update };
 }
 
-/* ===== SHARED 3D TACTICAL SOLDIER AVATAR (CODM FORWARD SLIDE + DEATH FALL ANIMATION) ===== */
+/* ===== SHARED 3D TACTICAL SOLDIER AVATAR (CODM FORWARD SLIDE + DEATH FALL + OVERHEAD TAG) ===== */
 function makeSoldierAvatar(opts = {}) {
   const armorCol = opts.armorCol || 0x2e64b8;
   const tint = opts.tint || null;
@@ -610,6 +687,44 @@ function makeSoldierAvatar(opts = {}) {
   let lims = null, bones = {}, axes = {}, rHandBone = null, modelRoot = null, hasSkeletal = false;
   let aimPitch = 0, firingPulse = 0, crouchLerp = 0, slideLerp = 0, reloadProg = 0, isReloading = false, weaponCat = 'ar';
   let deathFall = 0;
+
+  let nameTagSprite = null, tagCtx = null, tagTex = null, lastTagText = '', lastTagHp = -1;
+  if (opts.label) {
+    const cv = document.createElement('canvas');
+    cv.width = 256;
+    cv.height = 64;
+    tagCtx = cv.getContext('2d');
+    tagTex = new THREE.CanvasTexture(cv);
+    const spMat = new THREE.SpriteMaterial({ map: tagTex, transparent: true, depthTest: false });
+    nameTagSprite = new THREE.Sprite(spMat);
+    nameTagSprite.scale.set(1.65, 0.42, 1);
+    nameTagSprite.position.set(0, 2.25, 0);
+    grp.add(nameTagSprite);
+  }
+
+  function updateTag(labelText, hpVal = 100) {
+    if (!tagCtx || !tagTex) return;
+    const clampedHp = Math.max(0, Math.min(100, Math.ceil(hpVal)));
+    if (labelText === lastTagText && clampedHp === lastTagHp) return;
+    lastTagText = labelText;
+    lastTagHp = clampedHp;
+    tagCtx.clearRect(0, 0, 256, 64);
+    tagCtx.fillStyle = 'rgba(8,14,28,0.78)';
+    tagCtx.fillRect(16, 8, 224, 46);
+    tagCtx.strokeStyle = opts.isEnemy ? '#ff2a55' : '#38bdf8';
+    tagCtx.lineWidth = 2;
+    tagCtx.strokeRect(16, 8, 224, 46);
+    tagCtx.fillStyle = '#f8fafc';
+    tagCtx.font = 'bold 18px sans-serif';
+    tagCtx.textAlign = 'center';
+    tagCtx.fillText(String(labelText).slice(0, 16), 128, 30);
+    tagCtx.fillStyle = '#1e293b';
+    tagCtx.fillRect(28, 38, 200, 8);
+    tagCtx.fillStyle = opts.isEnemy ? '#ff2a55' : '#22c55e';
+    tagCtx.fillRect(28, 38, 200 * (clampedHp / 100), 8);
+    tagTex.needsUpdate = true;
+  }
+  if (opts.label) updateTag(opts.label, 100);
 
   function setGun(gid) {
     if (!weaponMount) return;
@@ -732,6 +847,8 @@ function makeSoldierAvatar(opts = {}) {
 
     model.traverse(o => {
       if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
         if (tint && o.material) {
           o.material = o.material.clone();
           if (o.material.emissive) {
@@ -814,10 +931,12 @@ function makeSoldierAvatar(opts = {}) {
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.62, 0.28), vestMat);
     torso.position.y = 1.12;
+    torso.castShadow = true;
     body.add(torso);
 
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.3, 0.28), skinMat);
     head.position.y = 1.62;
+    head.castShadow = true;
     body.add(head);
 
     const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.33), darkMat);
@@ -887,6 +1006,7 @@ function makeSoldierAvatar(opts = {}) {
     mix,
     setGun,
     setAnim,
+    updateTag,
     setAimPitch(p) { aimPitch = p; },
     setStance(crouch, slide, rel, relP) {
       crouchLerp = crouch;
@@ -1004,6 +1124,399 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
   });
 }
 
+/* ===== PRIVATE ROOM SECTION IN MAP SELECTOR (1v1 / 2v2 + HIGH-QUALITY BATTLE MAP) ===== */
+(function initPrivateMapSection() {
+  if (typeof MAPS !== 'undefined' && Array.isArray(MAPS) && !MAPS.some(m => m.id === 'killhouse_1v1')) {
+    MAPS.push({
+      id: 'killhouse_1v1',
+      name: 'TACTICAL KILLHOUSE 1V1',
+      sky: 0x1e2d4a,
+      desc: 'High-Detail 3D 1v1 & 2v2 Symmetrical Arena'
+    });
+  }
+
+  if (typeof window.activeMap === 'function' && !window.__origActiveMap) {
+    window.__origActiveMap = window.activeMap;
+    window.activeMap = function () {
+      if (PRIVATE_ROOM.active) {
+        return {
+          id: PRIVATE_ROOM.mapId || 'killhouse_1v1',
+          name: PRIVATE_ROOM.mapName || 'TACTICAL KILLHOUSE 1V1',
+          sky: 0x1e2d4a,
+          isPrivate: true,
+          mode: PRIVATE_ROOM.mode
+        };
+      }
+      return window.__origActiveMap.apply(this, arguments);
+    };
+  }
+
+  // Cross-tab & Firebase room sync helper so friends can join by room code
+  let roomBc = null;
+  try {
+    roomBc = new BroadcastChannel('lul_private_room_sync');
+    roomBc.onmessage = ev => {
+      const d = ev.data;
+      if (!d || !PRIVATE_ROOM.roomId || d.roomId !== PRIVATE_ROOM.roomId) return;
+      if (d.type === 'JOIN_REQ' && PRIVATE_ROOM.isHost) {
+        PRIVATE_ROOM.peers[d.pid] = { pid: d.pid, name: d.name || 'FRIEND', ready: true };
+        broadcastRoomState();
+        updatePrivatePanelUI();
+      } else if (d.type === 'ROOM_STATE') {
+        PRIVATE_ROOM.mode = d.mode || PRIVATE_ROOM.mode;
+        PRIVATE_ROOM.mapId = d.mapId || PRIVATE_ROOM.mapId;
+        PRIVATE_ROOM.mapName = d.mapName || PRIVATE_ROOM.mapName;
+        PRIVATE_ROOM.peers = d.peers || PRIVATE_ROOM.peers;
+        updatePrivatePanelUI();
+        if (d.started && !AR && !AR_LOADING) {
+          PRIVATE_ROOM.active = true;
+          startMatch(PRIVATE_ROOM.roomId);
+        }
+      }
+    };
+  } catch (e) {}
+
+  function myPlayerInfo() {
+    const pid = (typeof MY_PID !== 'undefined' && MY_PID) ? MY_PID : (window.__pvpPid || (window.__pvpPid = 'P_' + Math.random().toString(36).slice(2, 8)));
+    const name = (typeof S !== 'undefined' && S && S.name) ? S.name : 'OPERATOR';
+    return { pid, name };
+  }
+
+  function broadcastRoomState(started = false) {
+    if (!PRIVATE_ROOM.roomId) return;
+    const payload = {
+      type: 'ROOM_STATE',
+      roomId: PRIVATE_ROOM.roomId,
+      mode: PRIVATE_ROOM.mode,
+      mapId: PRIVATE_ROOM.mapId,
+      mapName: PRIVATE_ROOM.mapName,
+      peers: PRIVATE_ROOM.peers,
+      started
+    };
+    if (roomBc) {
+      try { roomBc.postMessage(payload); } catch (e) {}
+    }
+    try {
+      localStorage.setItem('lul_priv_' + PRIVATE_ROOM.roomId, JSON.stringify(payload));
+    } catch (e) {}
+    if (typeof window.db !== 'undefined' && window.db && typeof window.db.ref === 'function') {
+      try {
+        window.db.ref('privateRooms/' + PRIVATE_ROOM.roomId).set(payload);
+      } catch (e) {}
+    }
+  }
+
+  function createPrivateRoom() {
+    const me = myPlayerInfo();
+    const code = genPrivateCode();
+    PRIVATE_ROOM.active = true;
+    PRIVATE_ROOM.roomId = code;
+    PRIVATE_ROOM.isHost = true;
+    PRIVATE_ROOM.mode = '1v1';
+    PRIVATE_ROOM.mapId = 'killhouse_1v1';
+    PRIVATE_ROOM.mapName = 'TACTICAL KILLHOUSE 1V1';
+    PRIVATE_ROOM.peers = { [me.pid]: { pid: me.pid, name: me.name, isHost: true } };
+
+    if (typeof window.SQUAD_ID !== 'undefined') window.SQUAD_ID = code;
+    if (typeof window.createSquad === 'function') {
+      try { window.createSquad(code); } catch (e) {}
+    }
+    if (typeof window.db !== 'undefined' && window.db && typeof window.db.ref === 'function') {
+      try {
+        window.db.ref('privateRooms/' + code).on('value', snap => {
+          const val = snap && snap.val();
+          if (!val) return;
+          if (val.peers) PRIVATE_ROOM.peers = val.peers;
+          updatePrivatePanelUI();
+        });
+      } catch (e) {}
+    }
+    broadcastRoomState(false);
+    updatePrivatePanelUI();
+    if (typeof toast === 'function') toast('🔒 Private Room Created: ' + code);
+  }
+
+  function joinPrivateRoom(rawCode) {
+    const code = String(rawCode || '').trim().toUpperCase();
+    if (!code) {
+      if (typeof toast === 'function') toast('⚠️ Enter your friend\'s Room Code');
+      return;
+    }
+    const me = myPlayerInfo();
+    PRIVATE_ROOM.active = true;
+    PRIVATE_ROOM.roomId = code;
+    PRIVATE_ROOM.isHost = false;
+    PRIVATE_ROOM.mode = '1v1';
+    PRIVATE_ROOM.mapId = 'killhouse_1v1';
+    PRIVATE_ROOM.mapName = 'TACTICAL KILLHOUSE 1V1';
+    PRIVATE_ROOM.peers[me.pid] = { pid: me.pid, name: me.name, isHost: false };
+
+    if (typeof window.SQUAD_ID !== 'undefined') window.SQUAD_ID = code;
+    if (typeof window.joinSquad === 'function') {
+      try { window.joinSquad(code); } catch (e) {}
+    }
+    try {
+      const cached = JSON.parse(localStorage.getItem('lul_priv_' + code) || 'null');
+      if (cached && cached.peers) {
+        PRIVATE_ROOM.peers = Object.assign({}, cached.peers, PRIVATE_ROOM.peers);
+        PRIVATE_ROOM.mode = cached.mode || '1v1';
+        PRIVATE_ROOM.mapId = cached.mapId || 'killhouse_1v1';
+      }
+    } catch (e) {}
+
+    if (roomBc) {
+      try { roomBc.postMessage({ type: 'JOIN_REQ', roomId: code, pid: me.pid, name: me.name }); } catch (e) {}
+    }
+    if (typeof window.db !== 'undefined' && window.db && typeof window.db.ref === 'function') {
+      try {
+        window.db.ref('privateRooms/' + code + '/peers/' + me.pid).set({ pid: me.pid, name: me.name, isHost: false });
+        window.db.ref('privateRooms/' + code).on('value', snap => {
+          const val = snap && snap.val();
+          if (!val) return;
+          PRIVATE_ROOM.mode = val.mode || PRIVATE_ROOM.mode;
+          PRIVATE_ROOM.mapId = val.mapId || PRIVATE_ROOM.mapId;
+          PRIVATE_ROOM.mapName = val.mapName || PRIVATE_ROOM.mapName;
+          if (val.peers) PRIVATE_ROOM.peers = val.peers;
+          updatePrivatePanelUI();
+          if (val.started && !AR && !AR_LOADING) {
+            PRIVATE_ROOM.active = true;
+            startMatch(code);
+          }
+        });
+      } catch (e) {}
+    }
+    updatePrivatePanelUI();
+    if (typeof toast === 'function') toast('🤝 Joined Private Room: ' + code);
+  }
+
+  function buildPrivatePanelHtml() {
+    const me = myPlayerInfo();
+    const peerList = Object.values(PRIVATE_ROOM.peers || {});
+    if (!peerList.length) peerList.push({ pid: me.pid, name: me.name, isHost: true });
+    const maxSlots = PRIVATE_ROOM.mode === '2v2' ? 4 : 2;
+    const slotsHtml = Array.from({ length: maxSlots }).map((_, idx) => {
+      const p = peerList[idx];
+      const teamLbl = idx % 2 === 0 ? 'ALPHA' : 'BRAVO';
+      const teamCol = idx % 2 === 0 ? '#38bdf8' : '#ff2a55';
+      return `
+        <div style="flex:1;min-width:120px;background:rgba(15,23,42,0.88);border:1px solid ${p ? teamCol : 'rgba(148,163,184,0.25)'};border-radius:10px;padding:8px 10px;text-align:left">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.08em;color:${teamCol}">${teamLbl} TEAM · SLOT ${idx + 1}</div>
+          <div style="font-size:13px;font-weight:700;color:${p ? '#f8fafc' : '#64748b'};margin-top:2px">
+            ${p ? (esc(p.name) + (p.pid === me.pid ? ' (YOU)' : '')) : 'Waiting for Friend...'}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div id="priv-sec-wrap" style="margin-top:10px;display:flex;flex-direction:column;gap:10px;text-align:left">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.85);border:1px solid rgba(56,189,248,0.35);border-radius:12px;padding:10px 12px">
+          <div>
+            <div style="font-size:11px;font-weight:800;color:#38bdf8;letter-spacing:.08em">🔒 PRIVATE CUSTOM ROOM</div>
+            <div style="font-size:12px;color:#cbd5e1;margin-top:2px">
+              ${PRIVATE_ROOM.roomId
+                ? `Room Code: <b style="color:#facc15;font-size:14px;letter-spacing:.1em">${esc(PRIVATE_ROOM.roomId)}</b>`
+                : 'Create a private room or enter your friend\'s code'}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button type="button" class="sm" id="priv-create-btn">➕ CREATE ROOM</button>
+            ${PRIVATE_ROOM.roomId ? `<button type="button" class="sm alt" id="priv-copy-btn">📋 COPY CODE</button>` : ''}
+          </div>
+        </div>
+
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" id="priv-code-inp" placeholder="Enter Friend Room Code (e.g. PVP-4829)" value="${esc(PRIVATE_ROOM.roomId)}" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid rgba(148,163,184,0.35);background:#0f172a;color:#f8fafc;font-weight:700;text-transform:uppercase">
+          <button type="button" class="sm" id="priv-join-btn">JOIN ROOM</button>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.75);padding:8px 12px;border-radius:10px;border:1px solid rgba(148,163,184,0.2)">
+          <span style="font-size:12px;font-weight:800;color:#e2e8f0">⚔️ MATCH FORMAT</span>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="sm${PRIVATE_ROOM.mode === '1v1' ? '' : ' alt'}" id="priv-mode-1v1">1v1 DUEL</button>
+            <button type="button" class="sm${PRIVATE_ROOM.mode === '2v2' ? '' : ' alt'}" id="priv-mode-2v2">2v2 CLASH</button>
+          </div>
+        </div>
+
+        <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 55%,#172554 100%);border:2px solid #38bdf8;border-radius:12px;padding:12px;position:relative;overflow:hidden">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+            <div>
+              <span style="background:#38bdf8;color:#081020;font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;letter-spacing:.06em">3D HIGH-GRAPHICS ARENA · SELECTED</span>
+              <div style="font-size:15px;font-weight:900;color:#f8fafc;margin-top:5px">🏟️ TACTICAL KILLHOUSE (${PRIVATE_ROOM.mode.toUpperCase()})</div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:3px">Symmetrical Alpha vs Bravo Bunkers · Walkable Glass Sniper Catwalk · Stacked Shipping Containers · Real-Time Shadows</div>
+            </div>
+            <div style="text-align:right;min-width:68px">
+              <div style="font-size:18px;font-weight:900;color:#facc15">${PRIVATE_ROOM.mode.toUpperCase()}</div>
+              <div style="font-size:10px;color:#4ade80;font-weight:700">READY</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${slotsHtml}
+        </div>
+
+        <button type="button" class="sm" id="priv-launch-btn" style="width:100%;padding:11px;font-size:14px;font-weight:900;background:linear-gradient(90deg,#2563eb,#06b6d4);color:#fff;border:none;border-radius:10px;cursor:pointer">
+          🚀 START ${PRIVATE_ROOM.mode.toUpperCase()} BATTLE IN TACTICAL KILLHOUSE
+        </button>
+      </div>
+    `;
+  }
+
+  function bindPrivatePanelEvents(root) {
+    if (!root) return;
+    const cBtn = root.querySelector('#priv-create-btn');
+    const cpBtn = root.querySelector('#priv-copy-btn');
+    const jBtn = root.querySelector('#priv-join-btn');
+    const inp = root.querySelector('#priv-code-inp');
+    const m1 = root.querySelector('#priv-mode-1v1');
+    const m2 = root.querySelector('#priv-mode-2v2');
+    const lBtn = root.querySelector('#priv-launch-btn');
+
+    if (cBtn) cBtn.onclick = e => { e.stopPropagation(); createPrivateRoom(); };
+    if (cpBtn) {
+      cpBtn.onclick = e => {
+        e.stopPropagation();
+        if (navigator.clipboard && PRIVATE_ROOM.roomId) {
+          navigator.clipboard.writeText(PRIVATE_ROOM.roomId).catch(() => {});
+        }
+        if (typeof toast === 'function') toast('📋 Copied Room Code: ' + PRIVATE_ROOM.roomId);
+      };
+    }
+    if (jBtn) jBtn.onclick = e => { e.stopPropagation(); joinPrivateRoom(inp ? inp.value : ''); };
+    if (m1) {
+      m1.onclick = e => {
+        e.stopPropagation();
+        PRIVATE_ROOM.mode = '1v1';
+        broadcastRoomState(false);
+        updatePrivatePanelUI();
+      };
+    }
+    if (m2) {
+      m2.onclick = e => {
+        e.stopPropagation();
+        PRIVATE_ROOM.mode = '2v2';
+        broadcastRoomState(false);
+        updatePrivatePanelUI();
+      };
+    }
+    if (lBtn) {
+      lBtn.onclick = e => {
+        e.stopPropagation();
+        if (!PRIVATE_ROOM.roomId) createPrivateRoom();
+        PRIVATE_ROOM.active = true;
+        PRIVATE_ROOM.mapId = 'killhouse_1v1';
+        PRIVATE_ROOM.mapName = 'TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase();
+        broadcastRoomState(true);
+        const modal = root.closest('.modal');
+        if (modal) modal.remove();
+        startMatch(PRIVATE_ROOM.roomId);
+      };
+    }
+  }
+
+  function updatePrivatePanelUI() {
+    const slot = document.getElementById('priv-sec-host');
+    if (!slot) return;
+    slot.innerHTML = buildPrivatePanelHtml();
+    bindPrivatePanelEvents(slot);
+  }
+
+  window.openPrivateRoom = function () {
+    if (!PRIVATE_ROOM.roomId) {
+      const me = myPlayerInfo();
+      PRIVATE_ROOM.roomId = genPrivateCode();
+      PRIVATE_ROOM.isHost = true;
+      PRIVATE_ROOM.peers = { [me.pid]: { pid: me.pid, name: me.name, isHost: true } };
+    }
+    const existing = document.getElementById('priv-room-modal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'priv-room-modal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="pop L" style="max-width:32rem;width:94%;text-align:left">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="rL">🔒 PRIVATE 1v1 / 2v2 ARENA</div>
+          <button type="button" class="sm alt" id="priv-modal-close">✕</button>
+        </div>
+        <div id="priv-sec-host">${buildPrivatePanelHtml()}</div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('#priv-modal-close').onclick = () => {
+      PRIVATE_ROOM.active = false;
+      modal.remove();
+    };
+    bindPrivatePanelEvents(modal);
+  };
+
+  // Automatically inject the "🔒 PRIVATE" section tab into the Map Section whenever opened
+  function enhanceMapSection(container) {
+    if (!container || container.dataset.privEnhanced) return;
+    container.dataset.privEnhanced = '1';
+
+    const originalChildren = Array.from(container.children);
+    const pubWrap = document.createElement('div');
+    pubWrap.id = 'pub-maps-wrap';
+    originalChildren.forEach(ch => pubWrap.appendChild(ch));
+
+    const privHost = document.createElement('div');
+    privHost.id = 'priv-sec-host';
+    privHost.style.display = 'none';
+
+    const tabBar = document.createElement('div');
+    tabBar.style.cssText = 'display:flex;gap:8px;justify-content:center;margin:8px 0 10px;border-bottom:1px solid rgba(148,163,184,0.22);padding-bottom:8px;';
+    tabBar.innerHTML = `
+      <button type="button" class="sm" id="map-tab-public">🗺️ PUBLIC MAPS</button>
+      <button type="button" class="sm alt" id="map-tab-private">🔒 PRIVATE (1v1 / 2v2)</button>
+    `;
+
+    container.appendChild(tabBar);
+    container.appendChild(pubWrap);
+    container.appendChild(privHost);
+
+    const btnPub = tabBar.querySelector('#map-tab-public');
+    const btnPriv = tabBar.querySelector('#map-tab-private');
+
+    btnPub.onclick = e => {
+      e.stopPropagation();
+      PRIVATE_ROOM.active = false;
+      btnPub.className = 'sm';
+      btnPriv.className = 'sm alt';
+      pubWrap.style.display = '';
+      privHost.style.display = 'none';
+    };
+
+    btnPriv.onclick = e => {
+      e.stopPropagation();
+      PRIVATE_ROOM.active = true;
+      btnPub.className = 'sm alt';
+      btnPriv.className = 'sm';
+      pubWrap.style.display = 'none';
+      privHost.style.display = 'block';
+      privHost.innerHTML = buildPrivatePanelHtml();
+      bindPrivatePanelEvents(privHost);
+    };
+  }
+
+  const obs = new MutationObserver(() => {
+    const candidates = document.querySelectorAll('.modal .pop, #map-sec, [data-tab="maps"]');
+    candidates.forEach(el => {
+      if (el.closest('#arena') || el.closest('#ar-load') || el.id === 'priv-room-modal') return;
+      const txt = (el.textContent || '').toUpperCase();
+      if ((txt.includes('FIRING RANGE') || txt.includes('NUKETOWN') || txt.includes('SELECT MAP')) && !el.dataset.privEnhanced) {
+        enhanceMapSection(el);
+      }
+    });
+  });
+  if (document.body) {
+    obs.observe(document.body, { childList: true, subtree: true });
+  } else {
+    window.addEventListener('DOMContentLoaded', () => obs.observe(document.body, { childList: true, subtree: true }));
+  }
+})();
+
 /* ===== PRE-MATCH DEPLOYMENT LOADING SCREEN + ASSET PRELOADER ===== */
 let AR_LOADING = false;
 function startMatch(squadId = null) {
@@ -1012,13 +1525,16 @@ function startMatch(squadId = null) {
   AR_LOADING = true;
   if (typeof SFX !== 'undefined' && SFX.deploy) SFX.deploy();
 
-  const mapCfg = (typeof activeMap === 'function') ? activeMap() : { id: 'firing_range', name: 'FIRING RANGE', sky: 0x6ea8dc };
+  const mapCfg = PRIVATE_ROOM.active
+    ? { id: PRIVATE_ROOM.mapId || 'killhouse_1v1', name: PRIVATE_ROOM.mapName || 'TACTICAL KILLHOUSE 1V1', sky: 0x1e2d4a, isPrivate: true, mode: PRIVATE_ROOM.mode }
+    : ((typeof activeMap === 'function') ? activeMap() : { id: 'firing_range', name: 'FIRING RANGE', sky: 0x6ea8dc });
+
   const loadEl = document.createElement('div');
   loadEl.id = 'ar-load';
   loadEl.className = 'ar-load';
   loadEl.innerHTML = `
     <div class="al-box">
-      <div class="al-tag">TACTICAL DEPLOYMENT</div>
+      <div class="al-tag">${mapCfg.isPrivate ? '🔒 PRIVATE ' + esc((mapCfg.mode || '1V1').toUpperCase()) + ' DEPLOYMENT' : 'TACTICAL DEPLOYMENT'}</div>
       <div class="al-map">${esc(mapCfg.name)}</div>
       <div class="al-sub" id="al-step">DOWNLOADING 3D SOLDIER & WEAPON ASSETS...</div>
       <div class="al-bar"><i id="al-fill" style="width:12%"></i></div>
@@ -1057,10 +1573,10 @@ function startMatch(squadId = null) {
     }
   });
 
-  setTimeout(() => setProg(38, 'GENERATING TERRAIN & BUILDING TEXTURES...'), 160);
+  setTimeout(() => setProg(38, 'GENERATING HIGH-RES PBR TEXTURES & SHADOWS...'), 160);
   setTimeout(() => {
     try { getArenaTextures(mapCfg.id); } catch (e) {}
-    setProg(68, 'ASSEMBLING 3D WEAPONS, BOTS & SQUAD HUD...');
+    setProg(68, 'CONSTRUCTING 3D BUNKERS, CATWALKS & WEAPONS...');
   }, 360);
 
   Promise.all([
@@ -1134,6 +1650,8 @@ function launchArenaWorld(squadId, mapCfg) {
 
   const skyHex = resolveSkyHex(mapCfg.sky, mapCfg.id);
   const isDesert = mapCfg.id === 'nuketown';
+  const isKillhouse = mapCfg.id === 'killhouse_1v1';
+  const isPrivatePvP = !!PRIVATE_ROOM.active;
 
   const arenaEl = document.createElement('div');
   arenaEl.id = 'arena';
@@ -1177,6 +1695,10 @@ function launchArenaWorld(squadId, mapCfg) {
       <div><span class="kcap">B</span> Loadout Menu · <span class="kcap">ESC</span> Aim ↔ Cursor</div>
     </div>` : '';
 
+  const roomBannerHtml = isPrivatePvP
+    ? `<div style="background:rgba(15,23,42,0.88);border:1px solid #38bdf8;color:#f8fafc;padding:4px 10px;border-radius:8px;font-size:.75rem;font-weight:800;letter-spacing:.05em">🔒 ${esc(PRIVATE_ROOM.mode.toUpperCase())} ROOM: <span style="color:#facc15">${esc(PRIVATE_ROOM.roomId)}</span></div>`
+    : '';
+
   arenaEl.innerHTML = `
     <canvas id="acv"></canvas>
     <div class="slide-fx" id="ar-slidefx"></div>
@@ -1192,9 +1714,10 @@ function launchArenaWorld(squadId, mapCfg) {
           <div class="ammo hud-movable" id="ar-ammobox" style="${hStyle('ammo', false)}">
             <span id="ar-wname" style="font-size:.76rem;color:var(--y)">${esc(weapons[0].name)}</span>
             <span id="ar-ammo">${wState[0].ammo} / ${wState[0].reserve}</span>
-            <span id="ar-kills" style="font-size:.76rem;color:#5be58a">KILLS: 0</span>
+            <span id="ar-kills" style="font-size:.76rem;color:#5be58a">${isPrivatePvP ? 'SCORE: 0' : 'KILLS: 0'}</span>
           </div>
           <button class="abtn-top loadout-btn" id="ar-loadout-btn" title="CODM Loadout Menu [B]">🎒 LOADOUT</button>
+          ${roomBannerHtml}
         </div>
         <div class="aright">
           <button class="abtn-top" id="ar-settings-btn" title="Battle Settings">⚙️</button>
@@ -1236,7 +1759,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
       <div class="sq-bhud hud-movable" id="ar-sqhud" style="${hStyle('sqhud', false)}"></div>
       ${pcKeysHtml}
-      <div class="mfeed" id="ar-feed">${isPC ? '🎯 SCROLL WHEEL: ALL GUNS · SNIPER: HOLD LMB TO SCOPE & RELEASE TO FIRE' : 'MAP: ' + esc(mapCfg.name) + ' · ELIMINATE HOSTILES'}</div>
+      <div class="mfeed" id="ar-feed">${isPrivatePvP ? '🔒 PRIVATE ' + esc(PRIVATE_ROOM.mode.toUpperCase()) + ' · ROOM ' + esc(PRIVATE_ROOM.roomId) + ' · ELIMINATE OPPONENT' : (isPC ? '🎯 SCROLL WHEEL: ALL GUNS · SNIPER: HOLD LMB TO SCOPE & RELEASE TO FIRE' : 'MAP: ' + esc(mapCfg.name) + ' · ELIMINATE HOSTILES')}</div>
 
       <div class="hctrl" id="hc-minimap" style="${hStyle('minimap')}"><canvas id="radar" width="84" height="84"></canvas></div>
       <div class="hctrl joy" id="hc-joy" style="${hStyle('joy')}"><div class="knob" id="hc-knob"></div></div>
@@ -1279,10 +1802,14 @@ function launchArenaWorld(squadId, mapCfg) {
   const q = safeS.cfg.gfx || 'High';
   renderer.setPixelRatio(q === 'Low' ? 0.85 : q === 'Medium' ? 1.15 : Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.setClearColor(skyHex, 1);
+  if (q !== 'Low') {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(skyHex);
-  scene.fog = new THREE.Fog(skyHex, 36, 115);
+  scene.fog = new THREE.Fog(skyHex, isKillhouse ? 42 : 36, isKillhouse ? 125 : 115);
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.08, 140);
   scene.add(camera);
@@ -1291,138 +1818,327 @@ function launchArenaWorld(squadId, mapCfg) {
   fppVm.setGun(weapons[0].id);
   camera.add(fppVm.root);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.72));
-  scene.add(new THREE.HemisphereLight(0xf0f9ff, 0x475569, 0.75));
-  const sun = new THREE.DirectionalLight(0xfffbeb, 0.95);
+  scene.add(new THREE.AmbientLight(0xffffff, isKillhouse ? 0.58 : 0.72));
+  scene.add(new THREE.HemisphereLight(isKillhouse ? 0xbae6fd : 0xf0f9ff, 0x334155, 0.78));
+  const sun = new THREE.DirectionalLight(isKillhouse ? 0xfff3d6 : 0xfffbeb, 1.08);
   sun.position.set(24, 42, 20);
+  if (q !== 'Low') {
+    sun.castShadow = true;
+    sun.shadow.mapSize.width = 1024;
+    sun.shadow.mapSize.height = 1024;
+    sun.shadow.camera.near = 2;
+    sun.shadow.camera.far = 110;
+    const d = 46;
+    sun.shadow.camera.left = -d;
+    sun.shadow.camera.right = d;
+    sun.shadow.camera.top = d;
+    sun.shadow.camera.bottom = -d;
+  }
   scene.add(sun);
 
   const tex = getArenaTextures(mapCfg.id);
-
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(110, 110),
-    new THREE.MeshLambertMaterial({ map: tex.groundTex })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  scene.add(ground);
-
-  const roadMat = new THREE.MeshLambertMaterial({ map: tex.roadTex });
-  const roadNS = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 98), roadMat);
-  roadNS.rotation.x = -Math.PI / 2;
-  roadNS.position.y = 0.02;
-  scene.add(roadNS);
-
-  const roadEW = new THREE.Mesh(new THREE.PlaneGeometry(98, 9.5), roadMat);
-  roadEW.rotation.x = -Math.PI / 2;
-  roadEW.rotation.z = Math.PI / 2;
-  roadEW.position.y = 0.025;
-  scene.add(roadEW);
-
   const colliders = [];
+  const walkableSurfaces = [];
+
   function addCollider(x, z, w, d, maxY) {
     colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, maxY });
   }
 
-  function addBox(x, y, z, w, h, d, matOpts, solid = true) {
+  function addBox(x, y, z, w, h, d, matOpts, solid = true, usePbr = false) {
+    const MatCtor = usePbr ? THREE.MeshStandardMaterial : THREE.MeshLambertMaterial;
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshLambertMaterial(matOpts)
+      new MatCtor(matOpts)
     );
     mesh.position.set(x, y + h / 2, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     scene.add(mesh);
     if (solid) addCollider(x, z, w, d, y + h);
     return mesh;
   }
 
-  addBox(0, 0, -48, 98, 4.8, 2.2, { map: tex.wallTex });
-  addBox(0, 0, 48, 98, 4.8, 2.2, { map: tex.wallTex });
-  addBox(-48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex });
-  addBox(48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex });
-
-  function buildTacticalBuilding(x, z, w, h, d, tintCol) {
-    addBox(x, 0, z, w, h, d, { map: tex.wallTex, color: tintCol });
-    addBox(x, h, z, w + 0.5, 0.45, d + 0.5, { color: 0x1e293b }, false);
-    const door = new THREE.Mesh(
-      new THREE.BoxGeometry(1.5, 2.4, 0.25),
-      new THREE.MeshLambertMaterial({ color: 0x0f172a })
+  /* ===== HIGH-GRAPHICS 3D BATTLE MAP: TACTICAL KILLHOUSE (1v1 / 2v2) ===== */
+  if (isKillhouse) {
+    const arenaW = 68, arenaD = 80;
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(arenaW + 16, arenaD + 16),
+      new THREE.MeshStandardMaterial({ map: tex.groundTex, roughness: 0.78, metalness: 0.12 })
     );
-    door.position.set(x, 1.2, z + (z < 0 ? d / 2 + 0.05 : -d / 2 - 0.05));
-    scene.add(door);
-  }
-  buildTacticalBuilding(-17, -17, 9.5, 5.6, 8.5, 0xffffff);
-  buildTacticalBuilding(17, -17, 9.5, 5.6, 8.5, 0xdbeafe);
-  buildTacticalBuilding(-17, 17, 9.5, 5.6, 8.5, 0xe2e8f0);
-  buildTacticalBuilding(17, 17, 9.5, 5.6, 8.5, 0xfef3c7);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
 
-  function buildContainer(x, z, w, h, d, col) {
-    addBox(x, 0, z, w, h, d, { color: col, map: tex.contTex });
-    addBox(x, h, z, w + 0.12, 0.14, d + 0.12, { color: 0x1e293b }, false);
-  }
-  buildContainer(-9.5, -4.5, 2.9, 2.6, 6.4, 0xdc2626);
-  buildContainer(9.5, 4.5, 2.9, 2.6, 6.4, 0x2563eb);
-  buildContainer(-27, 0, 3.2, 2.7, 7.6, 0x0d9488);
-  buildContainer(27, 0, 3.2, 2.7, 7.6, 0xd97706);
+    // Center Tactical Spine Road & Midline Strip
+    const midLane = new THREE.Mesh(
+      new THREE.PlaneGeometry(8.5, arenaD - 6),
+      new THREE.MeshStandardMaterial({ map: tex.roadTex, roughness: 0.65, metalness: 0.2 })
+    );
+    midLane.rotation.x = -Math.PI / 2;
+    midLane.position.y = 0.02;
+    midLane.receiveShadow = true;
+    scene.add(midLane);
 
-  function buildWatchtower(x, z) {
-    const legMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
-    [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]].forEach(([lx, lz]) => {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7.2, 8), legMat);
-      leg.position.set(x + lx, 3.6, z + lz);
-      scene.add(leg);
-    });
-    addBox(x, 6.4, z, 3.6, 0.28, 3.6, { color: 0x475569 }, false);
-    addBox(x, 6.7, z - 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
-    addBox(x, 6.7, z + 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
-    addBox(x, 9.2, z, 4.0, 0.25, 4.0, { color: 0x7c2d12 }, false);
-    addCollider(x, z, 3.0, 3.0, 7.5);
-  }
-  buildWatchtower(-34, -34);
-  buildWatchtower(34, -34);
+    // Glowing Midline Divider
+    const centerLine = new THREE.Mesh(
+      new THREE.PlaneGeometry(arenaW - 4, 0.35),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+    );
+    centerLine.rotation.x = -Math.PI / 2;
+    centerLine.position.y = 0.03;
+    scene.add(centerLine);
 
-  function buildSandbagCover(x, z) {
-    const bagMat = new THREE.MeshLambertMaterial({ color: 0xb59e78 });
-    for (let row = 0; row < 3; row++) {
-      for (let col = -2; col <= 2; col++) {
-        const bag = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.36, 0.55), bagMat);
-        bag.position.set(x + col * 0.84 + (row % 2) * 0.15, 0.18 + row * 0.35, z);
-        scene.add(bag);
-      }
+    // Reinforced Concrete Perimeter Walls with Hazard Base
+    addBox(0, 0, -arenaD / 2, arenaW + 2, 6.2, 2.0, { map: tex.wallTex, roughness: 0.7 }, true, true);
+    addBox(0, 0, arenaD / 2, arenaW + 2, 6.2, 2.0, { map: tex.wallTex, roughness: 0.7 }, true, true);
+    addBox(-arenaW / 2, 0, 0, 2.0, 6.2, arenaD + 2, { map: tex.wallTex, roughness: 0.7 }, true, true);
+    addBox(arenaW / 2, 0, 0, 2.0, 6.2, arenaD + 2, { map: tex.wallTex, roughness: 0.7 }, true, true);
+
+    // Symmetrical Alpha (South, z = +29) & Bravo (North, z = -29) Spawn Bunkers
+    function buildSpawnBunker(zPos, isAlpha) {
+      const teamCol = isAlpha ? 0x38bdf8 : 0xff2a55;
+      const dir = isAlpha ? -1 : 1;
+
+      // Bunker Back & Side Blast Walls
+      addBox(0, 0, zPos - dir * 4.5, 16, 4.4, 1.4, { map: tex.wallTex, roughness: 0.65 }, true, true);
+      addBox(-8.5, 0, zPos - dir * 1.5, 1.4, 4.0, 7.0, { map: tex.wallTex, roughness: 0.65 }, true, true);
+      addBox(8.5, 0, zPos - dir * 1.5, 1.4, 4.0, 7.0, { map: tex.wallTex, roughness: 0.65 }, true, true);
+
+      // Overhead Steel Canopy Roof
+      addBox(0, 4.3, zPos - dir * 1.8, 18.4, 0.45, 7.6, { color: 0x1e293b, roughness: 0.4, metalness: 0.65 }, false, true);
+
+      // Glowing Team Neon Header Strip
+      const neonBar = new THREE.Mesh(
+        new THREE.BoxGeometry(12.5, 0.32, 0.25),
+        new THREE.MeshBasicMaterial({ color: teamCol })
+      );
+      neonBar.position.set(0, 4.1, zPos + dir * 2.05);
+      scene.add(neonBar);
+
+      // Forward Sandbag & Concrete Low Cover Barricades
+      addBox(-3.8, 0, zPos + dir * 4.6, 4.2, 1.15, 0.95, { color: 0x64748b, roughness: 0.75 }, true, true);
+      addBox(3.8, 0, zPos + dir * 4.6, 4.2, 1.15, 0.95, { color: 0x64748b, roughness: 0.75 }, true, true);
+
+      // Base Accent Point Light
+      const bLight = new THREE.PointLight(teamCol, 1.1, 22);
+      bLight.position.set(0, 3.6, zPos);
+      scene.add(bLight);
     }
-    addCollider(x, z, 4.4, 0.9, 1.15);
-  }
-  buildSandbagCover(0, -11.5);
-  buildSandbagCover(0, 11.5);
+    buildSpawnBunker(29, true);
+    buildSpawnBunker(-29, false);
 
-  [[-6.5, 8], [6.5, -8], [-12, -26], [12, 26]].forEach(([cx, cz]) => {
-    addBox(cx, 0, cz, 1.4, 1.4, 1.4, { map: tex.crateTex });
-    addBox(cx + 1.45, 0, cz, 1.2, 1.2, 1.2, { map: tex.crateTex });
-    addBox(cx + 0.6, 1.35, cz, 1.1, 1.1, 1.1, { map: tex.crateTex });
-  });
+    // Central Elevated Glass Overlook Bridge & Walkable Ramps (z = 0)
+    const bridgeY = 3.0;
+    addBox(0, bridgeY - 0.35, 0, 14.0, 0.35, 6.2, { map: tex.deckTex, roughness: 0.45, metalness: 0.6 }, false, true);
+    walkableSurfaces.push({ minX: -7.0, maxX: 7.0, minZ: -3.1, maxZ: 3.1, y: bridgeY, type: 'flat' });
 
-  function buildTree(x, z, scale = 1) {
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24 * scale, 0.36 * scale, 2.8 * scale, 8),
-      new THREE.MeshLambertMaterial({ color: 0x5c3e26 })
-    );
-    trunk.position.set(x, 1.4 * scale, z);
-    scene.add(trunk);
-
-    const leafMat = new THREE.MeshLambertMaterial({ color: isDesert ? 0x768745 : 0x34692d });
-    [
-      [0, 3.3 * scale, 0, 1.8 * scale],
-      [-0.7 * scale, 2.8 * scale, 0.4 * scale, 1.3 * scale],
-      [0.75 * scale, 2.9 * scale, -0.3 * scale, 1.35 * scale]
-    ].forEach(([ox, oy, oz, rad]) => {
-      const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(rad, 1), leafMat);
-      crown.position.set(x + ox, oy, z + oz);
-      scene.add(crown);
+    // Support Columns under the Bridge
+    [[-5.8, -2.2], [5.8, -2.2], [-5.8, 2.2], [5.8, 2.2]].forEach(([px0, pz0]) => {
+      addBox(px0, 0, pz0, 0.9, bridgeY - 0.35, 0.9, { color: 0x1e293b, roughness: 0.4, metalness: 0.75 }, true, true);
     });
-    addCollider(x, z, 0.9 * scale, 0.9 * scale, 3.0 * scale);
+
+    // Armored Ballistic Glass Half-Walls on North & South edges of the Bridge
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.34,
+      roughness: 0.12,
+      metalness: 0.25
+    });
+    [-2.95, 2.95].forEach(gz => {
+      const gPanel = new THREE.Mesh(new THREE.BoxGeometry(13.6, 1.15, 0.14), glassMat);
+      gPanel.position.set(0, bridgeY + 0.58, gz);
+      scene.add(gPanel);
+      addBox(0, bridgeY + 1.15, gz, 13.8, 0.12, 0.22, { color: 0x0f172a, metalness: 0.8, roughness: 0.3 }, false, true);
+    });
+
+    // Left & Right Walkable Ramps leading onto the Bridge
+    function buildWalkableRamp(xStart, xEnd, zCenter, widthZ, hTop) {
+      const lenX = Math.abs(xEnd - xStart);
+      const midX = (xStart + xEnd) / 2;
+      const slopeAng = Math.atan2(hTop, lenX) * (xEnd > xStart ? 1 : -1);
+      const hyp = Math.hypot(lenX, hTop);
+      const rampMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(hyp, 0.28, widthZ),
+        new THREE.MeshStandardMaterial({ map: tex.deckTex, roughness: 0.5, metalness: 0.55 })
+      );
+      rampMesh.position.set(midX, hTop / 2 - 0.1, zCenter);
+      rampMesh.rotation.z = slopeAng;
+      rampMesh.castShadow = true;
+      rampMesh.receiveShadow = true;
+      scene.add(rampMesh);
+
+      walkableSurfaces.push({
+        minX: Math.min(xStart, xEnd),
+        maxX: Math.max(xStart, xEnd),
+        minZ: zCenter - widthZ / 2,
+        maxZ: zCenter + widthZ / 2,
+        xStart,
+        xEnd,
+        yTop: hTop,
+        type: 'rampX'
+      });
+    }
+    buildWalkableRamp(-14.5, -7.0, 0, 4.2, bridgeY);
+    buildWalkableRamp(14.5, 7.0, 0, 4.2, bridgeY);
+
+    // Center Tactical Core & Rotating Radar Dish on Overlook
+    addBox(0, bridgeY, 0, 1.6, 2.2, 1.6, { color: 0x0f172a, metalness: 0.8, roughness: 0.25 }, true, true);
+    const coreGlow = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.45, 1.8, 12),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    coreGlow.position.set(0, bridgeY + 1.1, 0);
+    scene.add(coreGlow);
+
+    // Staggered Double-Stacked Shipping Containers on Left & Right Flanks
+    function buildPbrContainer(x, y, z, w, h, d, col) {
+      addBox(x, y, z, w, h, d, { color: col, map: tex.contTex, roughness: 0.48, metalness: 0.52 }, true, true);
+      addBox(x, y + h, z, w + 0.14, 0.14, d + 0.14, { color: 0x0f172a, roughness: 0.4, metalness: 0.7 }, false, true);
+    }
+    // Left Flank Containers
+    buildPbrContainer(-21.5, 0, -12.5, 3.2, 2.8, 7.2, 0xdc2626);
+    buildPbrContainer(-21.5, 2.94, -12.5, 3.1, 2.7, 7.0, 0x334155);
+    buildPbrContainer(-21.5, 0, 12.5, 3.2, 2.8, 7.2, 0x2563eb);
+    buildPbrContainer(-21.5, 2.94, 12.5, 3.1, 2.7, 7.0, 0x475569);
+
+    // Right Flank Containers
+    buildPbrContainer(21.5, 0, -12.5, 3.2, 2.8, 7.2, 0xd97706);
+    buildPbrContainer(21.5, 2.94, -12.5, 3.1, 2.7, 7.0, 0x334155);
+    buildPbrContainer(21.5, 0, 12.5, 3.2, 2.8, 7.2, 0x0d9488);
+    buildPbrContainer(21.5, 2.94, 12.5, 3.1, 2.7, 7.0, 0x475569);
+
+    // Mid-Lane Tactical Peek Bunkers & Crates
+    [[-10.5, -14.5], [10.5, -14.5], [-10.5, 14.5], [10.5, 14.5]].forEach(([bx, bz]) => {
+      addBox(bx, 0, bz, 3.8, 1.35, 1.2, { map: tex.wallTex, roughness: 0.7 }, true, true);
+      addBox(bx + (bx < 0 ? -1.4 : 1.4), 0, bz + (bz < 0 ? -1.3 : 1.3), 1.3, 1.3, 1.3, { map: tex.crateTex, roughness: 0.8 }, true, true);
+    });
+
+    // Four Corner Stadium Floodlight Towers
+    [[-31, -36], [31, -36], [-31, 36], [31, 36]].forEach(([tx, tz]) => {
+      addBox(tx, 0, tz, 0.75, 10.5, 0.75, { color: 0x1e293b, metalness: 0.85, roughness: 0.3 }, true, true);
+      addBox(tx, 10.2, tz, 2.6, 0.9, 1.2, { color: 0x0f172a, metalness: 0.8, roughness: 0.3 }, false, true);
+      const lamp = new THREE.Mesh(
+        new THREE.BoxGeometry(2.2, 0.55, 0.2),
+        new THREE.MeshBasicMaterial({ color: 0xfef9c3 })
+      );
+      lamp.position.set(tx, 10.2, tz + (tz < 0 ? 0.62 : -0.62));
+      scene.add(lamp);
+    });
+  } else {
+    /* ===== EXISTING STANDARD ARENA MAPS ===== */
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(110, 110),
+      new THREE.MeshLambertMaterial({ map: tex.groundTex })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const roadMat = new THREE.MeshLambertMaterial({ map: tex.roadTex });
+    const roadNS = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 98), roadMat);
+    roadNS.rotation.x = -Math.PI / 2;
+    roadNS.position.y = 0.02;
+    scene.add(roadNS);
+
+    const roadEW = new THREE.Mesh(new THREE.PlaneGeometry(98, 9.5), roadMat);
+    roadEW.rotation.x = -Math.PI / 2;
+    roadEW.rotation.z = Math.PI / 2;
+    roadEW.position.y = 0.025;
+    scene.add(roadEW);
+
+    addBox(0, 0, -48, 98, 4.8, 2.2, { map: tex.wallTex });
+    addBox(0, 0, 48, 98, 4.8, 2.2, { map: tex.wallTex });
+    addBox(-48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex });
+    addBox(48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex });
+
+    function buildTacticalBuilding(x, z, w, h, d, tintCol) {
+      addBox(x, 0, z, w, h, d, { map: tex.wallTex, color: tintCol });
+      addBox(x, h, z, w + 0.5, 0.45, d + 0.5, { color: 0x1e293b }, false);
+      const door = new THREE.Mesh(
+        new THREE.BoxGeometry(1.5, 2.4, 0.25),
+        new THREE.MeshLambertMaterial({ color: 0x0f172a })
+      );
+      door.position.set(x, 1.2, z + (z < 0 ? d / 2 + 0.05 : -d / 2 - 0.05));
+      scene.add(door);
+    }
+    buildTacticalBuilding(-17, -17, 9.5, 5.6, 8.5, 0xffffff);
+    buildTacticalBuilding(17, -17, 9.5, 5.6, 8.5, 0xdbeafe);
+    buildTacticalBuilding(-17, 17, 9.5, 5.6, 8.5, 0xe2e8f0);
+    buildTacticalBuilding(17, 17, 9.5, 5.6, 8.5, 0xfef3c7);
+
+    function buildContainer(x, z, w, h, d, col) {
+      addBox(x, 0, z, w, h, d, { color: col, map: tex.contTex });
+      addBox(x, h, z, w + 0.12, 0.14, d + 0.12, { color: 0x1e293b }, false);
+    }
+    buildContainer(-9.5, -4.5, 2.9, 2.6, 6.4, 0xdc2626);
+    buildContainer(9.5, 4.5, 2.9, 2.6, 6.4, 0x2563eb);
+    buildContainer(-27, 0, 3.2, 2.7, 7.6, 0x0d9488);
+    buildContainer(27, 0, 3.2, 2.7, 7.6, 0xd97706);
+
+    function buildWatchtower(x, z) {
+      const legMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
+      [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]].forEach(([lx, lz]) => {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7.2, 8), legMat);
+        leg.position.set(x + lx, 3.6, z + lz);
+        scene.add(leg);
+      });
+      addBox(x, 6.4, z, 3.6, 0.28, 3.6, { color: 0x475569 }, false);
+      addBox(x, 6.7, z - 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
+      addBox(x, 6.7, z + 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
+      addBox(x, 9.2, z, 4.0, 0.25, 4.0, { color: 0x7c2d12 }, false);
+      addCollider(x, z, 3.0, 3.0, 7.5);
+    }
+    buildWatchtower(-34, -34);
+    buildWatchtower(34, -34);
+
+    function buildSandbagCover(x, z) {
+      const bagMat = new THREE.MeshLambertMaterial({ color: 0xb59e78 });
+      for (let row = 0; row < 3; row++) {
+        for (let col = -2; col <= 2; col++) {
+          const bag = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.36, 0.55), bagMat);
+          bag.position.set(x + col * 0.84 + (row % 2) * 0.15, 0.18 + row * 0.35, z);
+          scene.add(bag);
+        }
+      }
+      addCollider(x, z, 4.4, 0.9, 1.15);
+    }
+    buildSandbagCover(0, -11.5);
+    buildSandbagCover(0, 11.5);
+
+    [[-6.5, 8], [6.5, -8], [-12, -26], [12, 26]].forEach(([cx, cz]) => {
+      addBox(cx, 0, cz, 1.4, 1.4, 1.4, { map: tex.crateTex });
+      addBox(cx + 1.45, 0, cz, 1.2, 1.2, 1.2, { map: tex.crateTex });
+      addBox(cx + 0.6, 1.35, cz, 1.1, 1.1, 1.1, { map: tex.crateTex });
+    });
+
+    function buildTree(x, z, scale = 1) {
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24 * scale, 0.36 * scale, 2.8 * scale, 8),
+        new THREE.MeshLambertMaterial({ color: 0x5c3e26 })
+      );
+      trunk.position.set(x, 1.4 * scale, z);
+      scene.add(trunk);
+
+      const leafMat = new THREE.MeshLambertMaterial({ color: isDesert ? 0x768745 : 0x34692d });
+      [
+        [0, 3.3 * scale, 0, 1.8 * scale],
+        [-0.7 * scale, 2.8 * scale, 0.4 * scale, 1.3 * scale],
+        [0.75 * scale, 2.9 * scale, -0.3 * scale, 1.35 * scale]
+      ].forEach(([ox, oy, oz, rad]) => {
+        const crown = new THREE.Mesh(new THREE.DodecahedronGeometry(rad, 1), leafMat);
+        crown.position.set(x + ox, oy, z + oz);
+        scene.add(crown);
+      });
+      addCollider(x, z, 0.9 * scale, 0.9 * scale, 3.0 * scale);
+    }
+    [[-38, -14, 1.2], [-38, 18, 1.35], [38, -18, 1.25], [38, 16, 1.15], [-26, 36, 1.3], [26, 36, 1.2]].forEach(t => buildTree(t[0], t[1], t[2]));
   }
-  [[-38, -14, 1.2], [-38, 18, 1.35], [38, -18, 1.25], [38, 16, 1.15], [-26, 36, 1.3], [26, 36, 1.2]].forEach(t => buildTree(t[0], t[1], t[2]));
 
   const pickups = [];
-  const pickupCoords = [[-22, -22], [22, -22], [-22, 22], [22, 22], [0, 0]];
+  const pickupCoords = isKillhouse
+    ? [[-21.5, 0], [21.5, 0], [0, -18], [0, 18]]
+    : [[-22, -22], [22, -22], [-22, 22], [22, 22], [0, 0]];
   pickupCoords.forEach((pt, idx) => {
     const isMed = idx % 2 === 0;
     const m = new THREE.Mesh(
@@ -1434,8 +2150,16 @@ function launchArenaWorld(squadId, mapCfg) {
     pickups.push({ mesh: m, x: pt[0], z: pt[1], isMed, cd: 0 });
   });
 
-  let px = 0, py = 0, pz = 28, vy = 0;
-  let yaw = 0, pitch = 0.04, charYaw = 0, curAnimState = 'Idle';
+  // Symmetrical 1v1 / 2v2 spawns in Private Killhouse (Host at Alpha South, Friend at Bravo North)
+  const spawnIsBravo = isPrivatePvP && !PRIVATE_ROOM.isHost;
+  let px = spawnIsBravo ? -2 : 0;
+  let py = 0;
+  let pz = spawnIsBravo ? -29 : (isKillhouse ? 29 : 28);
+  let vy = 0;
+  let yaw = spawnIsBravo ? Math.PI : 0;
+  let pitch = 0.04;
+  let charYaw = yaw;
+  let curAnimState = 'Idle';
   let hp = 100, maxHp = 100, kills = 0;
   let scoped = false, fpp = false, reloading = false, reloadStartTs = 0, reloadDurMs = 1500, lastShotTs = 0;
   let crouching = false, crouchLerp = 0, slideTimer = 0, slideLerp = 0, slideDirX = 0, slideDirZ = 0;
@@ -1443,8 +2167,13 @@ function launchArenaWorld(squadId, mapCfg) {
   let joyX = 0, joyY = 0;
   const keysDown = {};
 
+  // Outgoing PvP hit event queue for 1v1 / 2v2 friend duel sync
+  let pendingHit = null;
+  let hitCounter = 0;
+  const processedHits = new Set();
+
   const playerAv = makeSoldierAvatar({
-    armorCol: (safeS.eq.skin >= 0 && typeof RAR !== 'undefined' && typeof ITEMS !== 'undefined' && ITEMS[safeS.eq.skin] && RAR[ITEMS[safeS.eq.skin].r]) ? RAR[ITEMS[safeS.eq.skin].r].c : 0x2563eb,
+    armorCol: spawnIsBravo ? 0xdc2626 : ((safeS.eq.skin >= 0 && typeof RAR !== 'undefined' && typeof ITEMS !== 'undefined' && ITEMS[safeS.eq.skin] && RAR[ITEMS[safeS.eq.skin].r]) ? RAR[ITEMS[safeS.eq.skin].r].c : 0x2563eb),
     gunId: weapons[0].id
   });
   scene.add(playerAv.grp);
@@ -1466,12 +2195,13 @@ function launchArenaWorld(squadId, mapCfg) {
       new THREE.DodecahedronGeometry(0.22, 0),
       new THREE.MeshBasicMaterial({ color: 0xcbd5e1, transparent: true, opacity: 0.55 })
     );
-    m.position.set(x + (Math.random() - 0.5) * 0.5, 0.2, z + (Math.random() - 0.5) * 0.5);
+    m.position.set(x + (Math.random() - 0.5) * 0.5, py + 0.2, z + (Math.random() - 0.5) * 0.5);
     scene.add(m);
     dustParts.push({ mesh: m, life: 0.35 });
   }
 
-  const botSpawns = [[-32, -32], [0, -34], [32, -32], [-34, 4], [34, -4], [0, -22]];
+  // In Private 1v1/2v2 mode, disable AI bots so you and your friend have a clean duel
+  const botSpawns = isPrivatePvP ? [] : [[-32, -32], [0, -34], [32, -32], [-34, 4], [34, -4], [0, -22]];
   const bots = botSpawns.map((sp, i) => {
     const gunId = i % 3 === 0 ? 7 : i % 2 === 0 ? 5 : 3;
     const av = makeSoldierAvatar({ armorCol: 0xdc2626, gunId, tint: 0xff2a55 });
@@ -1496,6 +2226,33 @@ function launchArenaWorld(squadId, mapCfg) {
   });
 
   const remotePeers = {};
+
+  function respawnPrivatePlayer() {
+    hp = 100;
+    py = 0;
+    vy = 0;
+    if (spawnIsBravo) {
+      px = -2;
+      pz = -29;
+      yaw = Math.PI;
+    } else {
+      px = 0;
+      pz = isKillhouse ? 29 : 28;
+      yaw = 0;
+    }
+    charYaw = yaw;
+    updateHud();
+  }
+
+  function applyIncomingPvpDamage(dmgAmt, attackerName = 'FRIEND') {
+    if (!isPrivatePvP) return;
+    hp = Math.max(0, hp - dmgAmt);
+    updateHud();
+    if (hp <= 0) {
+      setFeed(`💀 ELIMINATED BY ${esc(attackerName)}! RESPAWNING AT BASE...`);
+      respawnPrivatePlayer();
+    }
+  }
 
   /* ===== CODM-STYLE GUNSMITH DRAWER WITH ATTRIBUTES & ATTACHMENTS ===== */
   let gsSelectedIdx = 0;
@@ -1729,7 +2486,7 @@ function launchArenaWorld(squadId, mapCfg) {
     if (hpBar) hpBar.style.width = `${Math.max(0, (hp / maxHp) * 100)}%`;
     if (wNameEl) wNameEl.textContent = `${w.name} [${w.cat.toUpperCase()}]`;
     if (ammoEl) ammoEl.textContent = reloading ? 'RELOADING...' : `${st.ammo} / ${st.reserve}`;
-    if (killsEl) killsEl.textContent = `KILLS: ${kills}`;
+    if (killsEl) killsEl.textContent = `${isPrivatePvP ? 'SCORE' : 'KILLS'}: ${kills}`;
     const showBlackScope = scoped && (!fpp || w.cat === 'sniper' || w.cat === 'launcher');
     if (scopeOv) scopeOv.classList.toggle('on', showBlackScope);
     if (xhairEl) xhairEl.style.opacity = (fpp && scoped && !showBlackScope) ? '0' : '1';
@@ -1781,7 +2538,8 @@ function launchArenaWorld(squadId, mapCfg) {
   }
 
   function triggerSlideOrCrouch(isTap, isMoving) {
-    if (isTap && isMoving && py <= 0.05 && slideTimer <= 0) {
+    const floorNow = getFloorHeight(px, pz);
+    if (isTap && isMoving && (py - floorNow) <= 0.08 && slideTimer <= 0) {
       crouching = false;
       slideTimer = 0.72;
       slideDirX = -Math.sin(yaw);
@@ -1817,7 +2575,8 @@ function launchArenaWorld(squadId, mapCfg) {
   }
 
   function doJump() {
-    if (py <= 0.02) {
+    const floorNow = getFloorHeight(px, pz);
+    if ((py - floorNow) <= 0.06) {
       const boost = slideTimer > 0 ? 1.15 : 1.0;
       slideTimer = 0;
       crouching = false;
@@ -1896,6 +2655,23 @@ function launchArenaWorld(squadId, mapCfg) {
       GUN_AUDIO.playHitmarker(true);
       updateHud();
       setFeed(`💀 ELIMINATED HOSTILE SOLDIER! (+15 XP · +8 🪙)`);
+    } else {
+      GUN_AUDIO.playHitmarker(false);
+    }
+  }
+
+  function damageRemotePeer(pid, rp, amount) {
+    if (!isPrivatePvP || !rp) return;
+    hitCounter++;
+    pendingHit = { targetPid: pid, dmg: amount, seq: hitCounter, ts: Date.now() };
+    rp.hp = Math.max(0, (rp.hp || 100) - amount);
+    rp.av.updateTag(rp.name || 'FRIEND', rp.hp);
+    if (rp.hp <= 0) {
+      rp.hp = 100;
+      kills++;
+      GUN_AUDIO.playHitmarker(true);
+      updateHud();
+      setFeed(`🏆 ROUND POINT! YOU ELIMINATED ${esc(rp.name || 'FRIEND')} (${kills} PTS)`);
     } else {
       GUN_AUDIO.playHitmarker(false);
     }
@@ -2194,11 +2970,28 @@ function launchArenaWorld(squadId, mapCfg) {
     document.getElementById('hc-cam').addEventListener('pointerdown', e => { e.stopPropagation(); toggleCam(); });
   }
 
+  function getFloorHeight(x, z) {
+    let h = 0;
+    for (const s of walkableSurfaces) {
+      if (x >= s.minX && x <= s.maxX && z >= s.minZ && z <= s.maxZ) {
+        if (s.type === 'flat') {
+          h = Math.max(h, s.y);
+        } else if (s.type === 'rampX') {
+          const t = Math.max(0, Math.min(1, (x - s.xStart) / (s.xEnd - s.xStart)));
+          h = Math.max(h, t * s.yTop);
+        }
+      }
+    }
+    return h;
+  }
+
   function resolveCollisions(nx, nz, rad = 0.55) {
-    nx = Math.max(-45, Math.min(45, nx));
-    nz = Math.max(-45, Math.min(45, nz));
+    const limX = isKillhouse ? 32 : 45;
+    const limZ = isKillhouse ? 38 : 45;
+    nx = Math.max(-limX, Math.min(limX, nx));
+    nz = Math.max(-limZ, Math.min(limZ, nz));
     for (const c of colliders) {
-      if (py >= c.maxY - 0.1) continue;
+      if (py >= c.maxY - 0.12) continue;
       if (nx + rad > c.minX && nx - rad < c.maxX && nz + rad > c.minZ && nz - rad < c.maxZ) {
         const penL = (nx + rad) - c.minX;
         const penR = c.maxX - (nx - rad);
@@ -2236,26 +3029,48 @@ function launchArenaWorld(squadId, mapCfg) {
       }).join('');
     }
 
+    const myPid = (typeof MY_PID !== 'undefined' && MY_PID) ? MY_PID : (window.__pvpPid || '');
     const activePids = new Set();
     members.forEach(m => {
       if (m.me || !m.battle || !m.battle.inMatch) return;
       activePids.add(m.pid);
+
+      // Receive incoming PvP damage if friend hit us in 1v1/2v2
+      if (isPrivatePvP && m.battle.hit && m.battle.hit.targetPid === myPid) {
+        const hKey = m.pid + '_' + m.battle.hit.seq;
+        if (!processedHits.has(hKey)) {
+          processedHits.add(hKey);
+          applyIncomingPvpDamage(m.battle.hit.dmg || 25, m.name);
+        }
+      }
+
       let rp = remotePeers[m.pid];
       if (!rp) {
-        const av = makeSoldierAvatar({ armorCol: 0x38bdf8, gunId: m.battle.gunId || 3, tint: 0x4ade80 });
+        const av = makeSoldierAvatar({
+          armorCol: isPrivatePvP ? 0xdc2626 : 0x38bdf8,
+          gunId: m.battle.gunId || 3,
+          tint: isPrivatePvP ? 0xff2a55 : 0x4ade80,
+          label: m.name || 'PLAYER',
+          isEnemy: isPrivatePvP
+        });
         scene.add(av.grp);
         rp = remotePeers[m.pid] = {
           av,
+          name: m.name || 'PLAYER',
+          hp: typeof m.battle.hp === 'number' ? m.battle.hp : 100,
           tx: m.battle.x || 0,
           ty: m.battle.y || 0,
-          tz: m.battle.z || 26,
+          tz: m.battle.z || (isKillhouse ? -29 : 26),
           try: m.battle.ry || 0,
           anim: m.battle.anim || 'Idle'
         };
       }
+      rp.name = m.name || rp.name;
+      if (typeof m.battle.hp === 'number') rp.hp = m.battle.hp;
+      rp.av.updateTag(rp.name, rp.hp);
       rp.tx = m.battle.x || 0;
       rp.ty = m.battle.y || 0;
-      rp.tz = m.battle.z || 26;
+      rp.tz = m.battle.z || (isKillhouse ? -29 : 26);
       rp.try = m.battle.ry || 0;
       rp.anim = m.battle.anim || 'Idle';
       if (m.battle.gunId != null) rp.av.setGun(m.battle.gunId);
@@ -2302,11 +3117,11 @@ function launchArenaWorld(squadId, mapCfg) {
       radarCtx.fill();
     });
 
-    radarCtx.fillStyle = '#4ade80';
+    radarCtx.fillStyle = isPrivatePvP ? '#ff2a55' : '#4ade80';
     Object.values(remotePeers).forEach(rp => {
       const pt = toRadar(rp.av.grp.position.x, rp.av.grp.position.z);
       radarCtx.beginPath();
-      radarCtx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
+      radarCtx.arc(pt.x, pt.y, 3.2, 0, Math.PI * 2);
       radarCtx.fill();
     });
 
@@ -2371,10 +3186,11 @@ function launchArenaWorld(squadId, mapCfg) {
       px = pos.x;
       pz = pos.z;
 
+      const floorH = getFloorHeight(px, pz);
       vy -= 21 * dt;
       py += vy * dt;
-      if (py <= 0) {
-        py = 0;
+      if (py <= floorH) {
+        py = floorH;
         vy = 0;
       }
 
@@ -2459,6 +3275,20 @@ function launchArenaWorld(squadId, mapCfg) {
               } else {
                 damageBot(b, bl.dmg);
               }
+              break;
+            }
+          }
+        }
+
+        // PvP bullet collision against friend in Private 1v1 / 2v2 mode
+        if (!hitSomething && isPrivatePvP) {
+          for (const [pid, rp] of Object.entries(remotePeers)) {
+            const pPos = rp.av.grp.position;
+            const center = new THREE.Vector3(pPos.x, pPos.y + 1.1, pPos.z);
+            if (bl.pos.distanceTo(center) < 0.76 || bl.prevPos.distanceTo(center) < 0.68) {
+              hitSomething = true;
+              if (bl.explosive) GUN_AUDIO.playExplosion();
+              damageRemotePeer(pid, rp, bl.dmg);
               break;
             }
           }
@@ -2566,6 +3396,12 @@ function launchArenaWorld(squadId, mapCfg) {
           bots.forEach(b => {
             if (b.alive && Math.hypot(b.x - gx, b.z - gz) < 7.5) damageBot(b, 130);
           });
+          if (isPrivatePvP) {
+            Object.entries(remotePeers).forEach(([pid, rp]) => {
+              const pPos = rp.av.grp.position;
+              if (Math.hypot(pPos.x - gx, pPos.z - gz) < 7.5) damageRemotePeer(pid, rp, 130);
+            });
+          }
           scene.remove(g.mesh);
           grenades.splice(i, 1);
         }
@@ -2684,7 +3520,7 @@ function launchArenaWorld(squadId, mapCfg) {
       });
 
       syncAccum += dt;
-      if (syncAccum >= 0.35) {
+      if (syncAccum >= 0.25) {
         syncAccum = 0;
         if (typeof SQUAD_ID !== 'undefined' && SQUAD_ID && typeof syncBattleState === 'function') syncBattleState();
       }
@@ -2715,6 +3551,7 @@ function launchArenaWorld(squadId, mapCfg) {
         hp: Math.ceil(hp),
         gunId: weapons[wIdx].id,
         kills,
+        hit: pendingHit,
         ts: Date.now()
       };
     },
