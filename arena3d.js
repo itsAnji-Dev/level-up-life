@@ -1,7 +1,16 @@
-/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO, GUNSMITH & CODM PRIVATE MULTIPLAYER ===== */
+/* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO, GUNSMITH & CROSS-DEVICE PRIVATE MULTIPLAYER ===== */
 let AR = null;
 
-/* ===== CODM PRIVATE MULTIPLAYER STATE & LIVE ROOM TRANSPORT ===== */
+/* ===== UNIFIED MAP REGISTRY (AVAILABLE ON BOTH PC & MOBILE) ===== */
+const ALL_BATTLE_MAPS = [
+  { id: 'killhouse_1v1', name: 'TACTICAL KILLHOUSE 3D', sky: 0x1e2d4a, desc: 'Symmetrical 3D PvP Arena (1v1 / 2v2 / 5v5)' },
+  { id: 'firing_range',  name: 'FIRING RANGE',          sky: 0x6ea8dc, desc: 'Classic Military Compound & Containers' },
+  { id: 'nuketown',      name: 'NUKETOWN OPS',          sky: 0xd99b52, desc: 'Desert Testing Ground & Sightlines' },
+  { id: 'standoff',      name: 'STANDOFF',              sky: 0x5b8fb9, desc: 'Urban Crossfire Lanes & Cover' },
+  { id: 'shipment',      name: 'SHIPMENT 1944',         sky: 0x475569, desc: 'Fast-Paced Dockyard Container CQB' }
+];
+
+/* ===== CODM PRIVATE MULTIPLAYER & CROSS-DEVICE MAP SYNC STATE ===== */
 const PRIVATE_ROOM = {
   active: false,
   screenOpen: false,
@@ -9,11 +18,10 @@ const PRIVATE_ROOM = {
   joinDraft: '',
   invitedIds: new Set(),
   incomingInvites: [],
-  joinRequests: [],
   isHost: false,
   mode: '1v1', // '1v1' | '2v2' | '5v5'
   mapId: 'killhouse_1v1',
-  mapName: 'TACTICAL KILLHOUSE 1V1',
+  mapName: 'TACTICAL KILLHOUSE 3D',
   fillBots: false,
   myTeam: 'alpha', // 'alpha' | 'bravo'
   myReady: false,
@@ -21,12 +29,12 @@ const PRIVATE_ROOM = {
   peers: {}
 };
 
-const ROOM_CHANNEL_NAME = 'lul_codm_priv_room_bus_v1';
-const ROOM_STORAGE_KEY = 'lul_codm_priv_rooms_v1';
+const ROOM_CHANNEL_NAME = 'lul_codm_priv_room_bus_v2';
+const ROOM_STORAGE_KEY = 'lul_codm_priv_rooms_v2';
 let roomBroadcastChannel = null;
 
 function genPrivateCode() {
-  return String(Math.floor(1000000000 + Math.random() * 9000000000));
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 function getCurrentUserId() {
@@ -58,6 +66,37 @@ function getCurrentUserProfile() {
   return { pid, name, lvl, gunId };
 }
 
+function getMapById(id) {
+  if (!id) return ALL_BATTLE_MAPS[0];
+  const found = ALL_BATTLE_MAPS.find(m => m.id === id);
+  if (found) return found;
+  if (typeof MAPS !== 'undefined' && Array.isArray(MAPS)) {
+    const ext = MAPS.find(m => m.id === id);
+    if (ext) return { id: ext.id, name: ext.name || id.toUpperCase(), sky: resolveSkyHex(ext.sky, ext.id), desc: ext.desc || '' };
+  }
+  return ALL_BATTLE_MAPS[0];
+}
+
+function setSyncedMapSelection(mapId, mapName) {
+  const m = getMapById(mapId);
+  PRIVATE_ROOM.mapId = m.id;
+  PRIVATE_ROOM.mapName = mapName || m.name;
+  window.__SYNCED_MATCH_MAP = { id: m.id, name: PRIVATE_ROOM.mapName, sky: resolveSkyHex(m.sky, m.id) };
+  if (typeof S !== 'undefined' && S) {
+    S.map = m.id;
+    if (S.cfg) S.cfg.map = m.id;
+  }
+  if (typeof SEL_MAP !== 'undefined') {
+    try { SEL_MAP = m.id; } catch (e) {}
+  }
+  if (typeof curMapIdx !== 'undefined' && typeof MAPS !== 'undefined' && Array.isArray(MAPS)) {
+    const idx = MAPS.findIndex(x => x.id === m.id);
+    if (idx >= 0) {
+      try { curMapIdx = idx; } catch (e) {}
+    }
+  }
+}
+
 function readStoredRooms() {
   try {
     const raw = localStorage.getItem(ROOM_STORAGE_KEY);
@@ -83,18 +122,12 @@ function broadcastRoomEvent(payload) {
     const rooms = readStoredRooms();
     rooms[full.roomId] = Object.assign({}, rooms[full.roomId] || {}, full.snapshot, { updatedAt: Date.now() });
     writeStoredRooms(rooms);
-  } else if ((full.type === 'invite' || full.type === 'join_request' || full.type === 'accept_invite' || full.type === 'approve_request') && full.roomId) {
+  } else if (full.type === 'invite' && full.roomId) {
     const rooms = readStoredRooms();
-    const cur = rooms[full.roomId] || { roomId: full.roomId, members: {}, invites: [], requests: [] };
+    const cur = rooms[full.roomId] || { roomId: full.roomId, members: {}, invites: [] };
     cur.invites = Array.isArray(cur.invites) ? cur.invites : [];
-    cur.requests = Array.isArray(cur.requests) ? cur.requests : [];
-    if (full.type === 'invite') {
-      cur.invites = cur.invites.filter(x => !(x.roomId === full.roomId && x.targetId === full.targetId));
-      cur.invites.push(full);
-    } else if (full.type === 'join_request') {
-      cur.requests = cur.requests.filter(x => !(x.roomId === full.roomId && x.fromPid === full.fromPid));
-      cur.requests.push(full);
-    }
+    cur.invites = cur.invites.filter(x => !(x.roomId === full.roomId && x.targetId === full.targetId));
+    cur.invites.push(full);
     cur.updatedAt = Date.now();
     rooms[full.roomId] = cur;
     writeStoredRooms(rooms);
@@ -135,6 +168,7 @@ function resolveSkyHex(rawSky, mapId) {
   }
   if (mapId === 'nuketown') return 0xd99b52;
   if (mapId === 'shipment') return 0x475569;
+  if (mapId === 'standoff') return 0x5b8fb9;
   return 0x6ea8dc;
 }
 
@@ -309,6 +343,7 @@ function getArenaTextures(mapId = 'firing_range') {
   const isDesert = mapId === 'nuketown';
   const isDock = mapId === 'shipment';
   const isKillhouse = mapId === 'killhouse_1v1';
+  const isUrban = mapId === 'standoff';
 
   const groundTex = makeCanvasTex(512, 512, (ctx, w, h) => {
     if (isKillhouse) {
@@ -333,13 +368,13 @@ function getArenaTextures(mapId = 'firing_range') {
       return;
     }
 
-    ctx.fillStyle = isDesert ? '#9c7f54' : isDock ? '#475569' : '#4f6d34';
+    ctx.fillStyle = isDesert ? '#9c7f54' : isDock ? '#475569' : isUrban ? '#525b66' : '#4f6d34';
     ctx.fillRect(0, 0, w, h);
     for (let i = 0; i < 1600; i++) {
       const x = Math.random() * w, y = Math.random() * h;
       ctx.fillStyle = isDesert
         ? (Math.random() > 0.5 ? '#856941' : '#b39466')
-        : isDock
+        : isDock || isUrban
           ? (Math.random() > 0.5 ? '#334155' : '#64748b')
           : (Math.random() > 0.45 ? '#3f5928' : Math.random() > 0.2 ? '#658843' : '#746344');
       ctx.fillRect(x, y, 2 + Math.random() * 3, 2 + Math.random() * 4);
@@ -367,7 +402,7 @@ function getArenaTextures(mapId = 'firing_range') {
   }, 1, 14);
 
   const wallTex = makeCanvasTex(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = isKillhouse ? '#475569' : isDesert ? '#cfa87a' : '#78889c';
+    ctx.fillStyle = isKillhouse ? '#475569' : isDesert ? '#cfa87a' : isUrban ? '#8a7968' : '#78889c';
     ctx.fillRect(0, 0, w, h);
     if (isKillhouse) {
       for (let i = 0; i < 1200; i++) {
@@ -628,7 +663,7 @@ function createFppViewmodel() {
 
   const lArm = new THREE.Group();
   const lForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.043, 0.38, 10), sleeveMat);
-  lForearm.rotation.x = Math.PI * 0.38, -0.35, -0.22;
+  lForearm.rotation.set(Math.PI * 0.38, -0.35, -0.22);
   lForearm.position.set(-0.13, -0.13, -0.04);
   lArm.add(lForearm);
   const lWrist = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.034, 0.07, 10), skinMat);
@@ -1237,27 +1272,41 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
   });
 }
 
-/* ===== CODM PRIVATE MULTIPLAYER DEDICATED SLIDE, REAL FRIENDS LIST & LIVE ROOM SYNC ===== */
-(function initCodmPrivateMultiplayer() {
-  if (typeof MAPS !== 'undefined' && Array.isArray(MAPS) && !MAPS.some(m => m.id === 'killhouse_1v1')) {
-    MAPS.push({
-      id: 'killhouse_1v1',
-      name: 'TACTICAL KILLHOUSE 1V1',
-      sky: 0x1e2d4a,
-      desc: 'High-Detail 3D 1v1 & 2v2 Symmetrical Arena'
+/* ===== CROSS-DEVICE PRIVATE MULTIPLAYER, REAL INVITE BRIDGE & HOME-LOBBY MAP SYNC ===== */
+(function initCrossDeviceMultiplayerAndMapSync() {
+  if (typeof MAPS !== 'undefined' && Array.isArray(MAPS)) {
+    ALL_BATTLE_MAPS.forEach(bm => {
+      if (!MAPS.some(m => m.id === bm.id)) {
+        MAPS.push({
+          id: bm.id,
+          name: bm.name,
+          sky: bm.sky,
+          desc: bm.desc
+        });
+      }
     });
   }
 
+  // Ensure activeMap() ALWAYS returns the host-synced map on both PC and Mobile
   if (typeof window.activeMap === 'function' && !window.__origActiveMap) {
     window.__origActiveMap = window.activeMap;
     window.activeMap = function () {
       if (PRIVATE_ROOM.active) {
+        const m = getMapById(PRIVATE_ROOM.mapId);
         return {
-          id: PRIVATE_ROOM.mapId || 'killhouse_1v1',
-          name: PRIVATE_ROOM.mapName || ('TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase()),
-          sky: resolveSkyHex(null, PRIVATE_ROOM.mapId || 'killhouse_1v1'),
+          id: m.id,
+          name: PRIVATE_ROOM.mapName || m.name,
+          sky: resolveSkyHex(m.sky, m.id),
           isPrivate: true,
           mode: PRIVATE_ROOM.mode
+        };
+      }
+      if (window.__SYNCED_MATCH_MAP && window.__SYNCED_MATCH_MAP.id) {
+        const m = getMapById(window.__SYNCED_MATCH_MAP.id);
+        return {
+          id: m.id,
+          name: window.__SYNCED_MATCH_MAP.name || m.name,
+          sky: resolveSkyHex(m.sky, m.id)
         };
       }
       return window.__origActiveMap.apply(this, arguments);
@@ -1280,44 +1329,30 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         if (PRIVATE_ROOM.roomId && rooms[PRIVATE_ROOM.roomId]) {
           applyRoomSnapshot(rooms[PRIVATE_ROOM.roomId]);
         }
-        syncInvitesAndRequestsFromStorage(rooms);
+        syncInvitesFromStorage(rooms);
       } catch (e) {}
     }
   });
 
-  function syncInvitesAndRequestsFromStorage(roomsObj) {
+  function syncInvitesFromStorage(roomsObj) {
     const rooms = roomsObj || readStoredRooms();
     const me = getCurrentUserProfile();
     const foundInvites = [];
-    const foundRequests = [];
-
     Object.values(rooms).forEach(rm => {
-      if (!rm || !rm.roomId) return;
-      if (Array.isArray(rm.invites)) {
-        rm.invites.forEach(inv => {
-          if (inv && (inv.targetId === me.pid || inv.targetName === me.name) && inv.fromPid !== me.pid) {
-            foundInvites.push(inv);
-          }
-        });
-      }
-      if (Array.isArray(rm.requests) && rm.roomId === PRIVATE_ROOM.roomId) {
-        rm.requests.forEach(req => {
-          if (req && req.fromPid !== me.pid) {
-            foundRequests.push(req);
-          }
-        });
-      }
+      if (!rm || !rm.roomId || !Array.isArray(rm.invites)) return;
+      rm.invites.forEach(inv => {
+        if (inv && (inv.targetId === me.pid || inv.targetName === me.name) && inv.fromPid !== me.pid) {
+          foundInvites.push(inv);
+        }
+      });
     });
-
     PRIVATE_ROOM.incomingInvites = foundInvites;
-    PRIVATE_ROOM.joinRequests = foundRequests;
   }
 
   function applyRoomSnapshot(snap) {
     if (!snap || snap.roomId !== PRIVATE_ROOM.roomId) return;
     if (snap.mode) PRIVATE_ROOM.mode = snap.mode;
-    if (snap.mapId) PRIVATE_ROOM.mapId = snap.mapId;
-    if (snap.mapName) PRIVATE_ROOM.mapName = snap.mapName;
+    if (snap.mapId) setSyncedMapSelection(snap.mapId, snap.mapName);
     if (typeof snap.fillBots === 'boolean') PRIVATE_ROOM.fillBots = snap.fillBots;
 
     const me = getCurrentUserProfile();
@@ -1378,32 +1413,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       return;
     }
 
-    if (msg.type === 'join_request' && msg.roomId === PRIVATE_ROOM.roomId && msg.fromPid !== me.pid) {
-      PRIVATE_ROOM.joinRequests = [
-        ...PRIVATE_ROOM.joinRequests.filter(x => x.fromPid !== msg.fromPid),
-        msg
-      ];
-      if (PRIVATE_ROOM.isHost) {
-        const assignedTeam = msg.requestedTeam || 'bravo';
-        PRIVATE_ROOM.peers[msg.fromPid] = {
-          pid: msg.fromPid,
-          name: msg.fromName || 'FRIEND',
-          lvl: msg.fromLvl || 1,
-          isHost: false,
-          team: assignedTeam,
-          ready: true,
-          speaking: false,
-          gunId: msg.gunId != null ? msg.gunId : 3
-        };
-        if (typeof toast === 'function') {
-          toast(`🤝 ${msg.fromName || 'Friend'} joined Room ${msg.roomId}!`);
-        }
-        publishRoomSnapshot();
-      }
-      if (PRIVATE_ROOM.screenOpen) renderPrivateSlideBody();
-      return;
-    }
-
     if (msg.type === 'room_snapshot' && msg.roomId === PRIVATE_ROOM.roomId) {
       applyRoomSnapshot(msg.snapshot);
     }
@@ -1436,8 +1445,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       fillBots: PRIVATE_ROOM.fillBots,
       started: PRIVATE_ROOM.started,
       members: membersMap,
-      invites: existing.invites || [],
-      requests: existing.requests || []
+      invites: existing.invites || []
     };
 
     broadcastRoomEvent({
@@ -1447,20 +1455,23 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     });
   }
 
-  function enableLobbyNetworkBridge() {
+  // Keeps AR active as a lightweight lobby packet carrier while in Home Lobby OR Private Room
+  // so host map changes and private room states sync across PC & Mobile in real time!
+  function ensureLobbyNetworkBridge() {
     if (AR && !AR.isLobby) return;
     AR = {
       isLobby: true,
       paused: 0,
       getPacket() {
         const me = getCurrentUserProfile();
+        const curMap = getMapById(PRIVATE_ROOM.mapId || (typeof S !== 'undefined' && S && S.map) || 'killhouse_1v1');
         return {
           inMatch: false,
-          privLobby: true,
-          roomId: PRIVATE_ROOM.roomId,
+          privLobby: PRIVATE_ROOM.screenOpen || PRIVATE_ROOM.active,
+          roomId: PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' ? SQUAD_ID : ''),
           mode: PRIVATE_ROOM.mode,
-          mapId: PRIVATE_ROOM.mapId,
-          mapName: PRIVATE_ROOM.mapName,
+          mapId: curMap.id,
+          mapName: PRIVATE_ROOM.mapName || curMap.name,
           fillBots: PRIVATE_ROOM.fillBots,
           team: PRIVATE_ROOM.myTeam,
           ready: PRIVATE_ROOM.myReady,
@@ -1485,9 +1496,9 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
   }
 
   function pushLobbySync() {
-    if (PRIVATE_ROOM.screenOpen) enableLobbyNetworkBridge();
+    if (!AR || AR.isLobby) ensureLobbyNetworkBridge();
     publishRoomSnapshot();
-    syncInvitesAndRequestsFromStorage();
+    syncInvitesFromStorage();
     if (typeof syncBattleState === 'function' && (PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' && SQUAD_ID))) {
       try { syncBattleState(); } catch (e) {}
     }
@@ -1520,10 +1531,12 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         gunId: b.gunId != null ? b.gunId : 3
       };
 
+      // Sync Host's Map Selection across BOTH Home Lobby and Private Room on PC & Mobile
       if (!m.me && isHostMember) {
+        if (b.mapId) {
+          setSyncedMapSelection(b.mapId, b.mapName);
+        }
         if (b.mode) PRIVATE_ROOM.mode = b.mode;
-        if (b.mapId) PRIVATE_ROOM.mapId = b.mapId;
-        if (b.mapName) PRIVATE_ROOM.mapName = b.mapName;
         if (typeof b.fillBots === 'boolean') PRIVATE_ROOM.fillBots = b.fillBots;
         if (b.started || b.inMatch) {
           hostStarted = true;
@@ -1535,6 +1548,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       renderPrivateSlideBody();
     }
 
+    // Auto-deploy friend into the exact same 3D map when Host starts the match
     if (hostStarted && PRIVATE_ROOM.screenOpen && !AR_LOADING && (!AR || AR.isLobby)) {
       PRIVATE_ROOM.active = true;
       PRIVATE_ROOM.started = true;
@@ -1543,20 +1557,57 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     }
   }
 
+  function connectToBackendRoom(code, isCreating) {
+    const cleanCode = String(code || '').trim();
+    if (!cleanCode) return;
+
+    // 1. Set global SQUAD_ID used by the game's real-time multiplayer backend
+    if (typeof SQUAD_ID !== 'undefined') {
+      try { SQUAD_ID = cleanCode; } catch (e) {}
+    }
+    window.SQUAD_ID = cleanCode;
+
+    // 2. Call the game's native squad creation / join functions so PC & Mobile share the exact same backend room
+    if (isCreating) {
+      if (typeof createSquad === 'function') {
+        try {
+          createSquad(cleanCode);
+          if (typeof SQUAD_ID !== 'undefined' && SQUAD_ID) {
+            PRIVATE_ROOM.roomId = String(SQUAD_ID);
+          }
+        } catch (e) {}
+      }
+    } else {
+      const sqInp = document.getElementById('sq-inp') || document.querySelector('input[placeholder*="code" i], input[placeholder*="room" i], input[placeholder*="squad" i]');
+      if (sqInp) sqInp.value = cleanCode;
+      if (typeof joinSquad === 'function') {
+        try { joinSquad(cleanCode); } catch (e) {}
+      }
+    }
+
+    // 3. Immediately pull existing squad members from backend if already connected
+    if (typeof squadMembers === 'function') {
+      try {
+        const mems = squadMembers();
+        if (Array.isArray(mems) && mems.length) ingestSquadMembers(mems);
+      } catch (e) {}
+    }
+  }
+
   function createRoomNow() {
     const me = getCurrentUserProfile();
-    if (typeof createSquad === 'function') {
-      try { createSquad(); } catch (e) {}
-    }
-    const code = (typeof SQUAD_ID !== 'undefined' && SQUAD_ID) ? String(SQUAD_ID) : genPrivateCode();
-    if (typeof SQUAD_ID !== 'undefined') SQUAD_ID = code;
+    const initialCode = (typeof SQUAD_ID !== 'undefined' && SQUAD_ID) ? String(SQUAD_ID) : genPrivateCode();
 
     PRIVATE_ROOM.active = true;
-    PRIVATE_ROOM.roomId = code;
+    PRIVATE_ROOM.roomId = initialCode;
     PRIVATE_ROOM.isHost = true;
     PRIVATE_ROOM.myTeam = 'alpha';
     PRIVATE_ROOM.myReady = true;
     PRIVATE_ROOM.started = false;
+    setSyncedMapSelection(PRIVATE_ROOM.mapId || 'killhouse_1v1', PRIVATE_ROOM.mapName);
+
+    connectToBackendRoom(initialCode, true);
+
     PRIVATE_ROOM.peers = {
       [me.pid]: {
         pid: me.pid,
@@ -1570,28 +1621,20 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       }
     };
 
-    enableLobbyNetworkBridge();
+    ensureLobbyNetworkBridge();
     pushLobbySync();
     renderPrivateSlideBody();
-    if (typeof toast === 'function') toast('🔒 Private Room Created: ' + code);
+    if (typeof toast === 'function') toast('🔒 Private Room Created: ' + PRIVATE_ROOM.roomId);
   }
 
   function joinRoomNow(rawCode) {
-    const code = String(rawCode || PRIVATE_ROOM.joinDraft || '').trim().toUpperCase();
+    const code = String(rawCode || PRIVATE_ROOM.joinDraft || '').trim();
     if (!code) {
       if (typeof toast === 'function') toast('⚠️ Enter a Room ID to join');
       return;
     }
     PRIVATE_ROOM.joinDraft = code;
     const me = getCurrentUserProfile();
-
-    const sqInp = document.getElementById('sq-inp') || document.querySelector('input[placeholder*="code" i], input[placeholder*="squad" i]');
-    if (sqInp) sqInp.value = code;
-
-    if (typeof SQUAD_ID !== 'undefined') SQUAD_ID = code;
-    if (typeof joinSquad === 'function') {
-      try { joinSquad(code); } catch (e) {}
-    }
 
     const rooms = readStoredRooms();
     const existingRoom = rooms[code];
@@ -1624,27 +1667,13 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
 
     if (existingRoom) {
       if (existingRoom.mode) PRIVATE_ROOM.mode = existingRoom.mode;
-      if (existingRoom.mapId) PRIVATE_ROOM.mapId = existingRoom.mapId;
-      if (existingRoom.mapName) PRIVATE_ROOM.mapName = existingRoom.mapName;
+      if (existingRoom.mapId) setSyncedMapSelection(existingRoom.mapId, existingRoom.mapName);
       if (typeof existingRoom.fillBots === 'boolean') PRIVATE_ROOM.fillBots = existingRoom.fillBots;
     }
 
-    enableLobbyNetworkBridge();
-    publishRoomSnapshot();
-    if (!isExistingHost) {
-      broadcastRoomEvent({
-        type: 'join_request',
-        roomId: code,
-        fromPid: me.pid,
-        fromName: me.name,
-        fromLvl: me.lvl,
-        gunId: me.gunId,
-        requestedTeam: PRIVATE_ROOM.myTeam
-      });
-    }
-    if (typeof syncBattleState === 'function') {
-      try { syncBattleState(); } catch (e) {}
-    }
+    connectToBackendRoom(code, false);
+    ensureLobbyNetworkBridge();
+    pushLobbySync();
     renderPrivateSlideBody();
     if (typeof toast === 'function') toast('🤝 Joined Room: ' + code);
   }
@@ -1676,8 +1705,9 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       } else if (typeof src === 'object') {
         if (Array.isArray(src.friends)) src.friends.forEach(item => candidates.push(item));
         else if (Array.isArray(src.members)) src.members.forEach(item => candidates.push(item));
-        else Object.values(src).forEach(item => {
-          if (item && (item.name || item.username)) candidates.push(item);
+        else Object.entries(src).forEach(([k, item]) => {
+          if (item && typeof item === 'object') candidates.push(Object.assign({ id: k }, item));
+          else if (typeof item === 'string') candidates.push({ id: k, name: item });
         });
       }
     };
@@ -1687,11 +1717,14 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     if (typeof window.FRIENDS !== 'undefined') pushSource(window.FRIENDS);
     if (typeof CLAN !== 'undefined') pushSource(CLAN);
     if (typeof SQUAD_FRIENDS !== 'undefined') pushSource(SQUAD_FRIENDS);
+    if (typeof squadMembers === 'function') {
+      try { pushSource(squadMembers()); } catch (e) {}
+    }
 
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i) || '';
-        if (/friend/i.test(k) && !/priv_rooms/i.test(k)) {
+        if (/friend|clan|squad/i.test(k) && !/priv_rooms/i.test(k)) {
           const parsed = JSON.parse(localStorage.getItem(k) || 'null');
           pushSource(parsed);
         }
@@ -1726,17 +1759,59 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     return result;
   }
 
+  // Uses the exact same invitation pipeline as the Home Lobby team invitation
+  function triggerNativeTeamInvite(friend, roomCode) {
+    const fId = friend.id;
+    const fName = friend.name;
+    let invoked = false;
+
+    const fns = [
+      typeof sendInvite === 'function' ? sendInvite : null,
+      typeof inviteFriend === 'function' ? inviteFriend : null,
+      typeof inviteToSquad === 'function' ? inviteToSquad : null,
+      typeof sendSquadInvite === 'function' ? sendSquadInvite : null,
+      typeof window.sendInvite === 'function' ? window.sendInvite : null,
+      typeof window.inviteFriend === 'function' ? window.inviteFriend : null
+    ].filter(Boolean);
+
+    fns.forEach(fn => {
+      if (invoked) return;
+      try {
+        fn(fId, roomCode);
+        invoked = true;
+      } catch (e) {
+        try {
+          fn(fName, roomCode);
+          invoked = true;
+        } catch (e2) {}
+      }
+    });
+
+    // Also try clicking the matching native Home Lobby invite button if mounted in DOM
+    if (!invoked) {
+      const domBtns = Array.from(document.querySelectorAll('#ui button, .pop button, .modal button'));
+      const matchingBtn = domBtns.find(b => {
+        const rowText = (b.parentElement ? b.parentElement.textContent : '').toLowerCase();
+        return rowText.includes(fName.toLowerCase()) && /invite|\+/i.test(b.textContent || '');
+      });
+      if (matchingBtn) {
+        try {
+          matchingBtn.click();
+          invoked = true;
+        } catch (e) {}
+      }
+    }
+
+    return invoked;
+  }
+
   function sendFriendInvite(friend) {
     if (!friend) return;
     if (!PRIVATE_ROOM.roomId) createRoomNow();
     const me = getCurrentUserProfile();
     PRIVATE_ROOM.invitedIds.add(friend.id);
 
-    if (typeof inviteFriend === 'function') {
-      try { inviteFriend(friend.id, PRIVATE_ROOM.roomId); } catch (e) {}
-    } else if (typeof sendSquadInvite === 'function') {
-      try { sendSquadInvite(friend.id, PRIVATE_ROOM.roomId); } catch (e) {}
-    }
+    triggerNativeTeamInvite(friend, PRIVATE_ROOM.roomId);
 
     broadcastRoomEvent({
       type: 'invite',
@@ -1746,8 +1821,11 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       targetId: friend.id,
       targetName: friend.name,
       mode: PRIVATE_ROOM.mode,
+      mapId: PRIVATE_ROOM.mapId,
       mapName: PRIVATE_ROOM.mapName
     });
+
+    pushLobbySync();
 
     if (navigator.clipboard && PRIVATE_ROOM.roomId) {
       navigator.clipboard.writeText(PRIVATE_ROOM.roomId).catch(() => {});
@@ -1815,51 +1893,38 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     const micOn = (typeof VOICE !== 'undefined' && VOICE.micOn);
     const spkOn = (typeof VOICE !== 'undefined' && VOICE.spkOn);
 
-    const mapOptions = [
-      { id: 'killhouse_1v1', label: 'TACTICAL KILLHOUSE 3D' },
-      { id: 'firing_range', label: 'FIRING RANGE' },
-      { id: 'nuketown', label: 'NUKETOWN OPS' },
-      { id: 'standoff', label: 'STANDOFF' },
-      { id: 'shipment', label: 'SHIPMENT 1944' }
-    ];
-
     const friendsList = collectRealFriends();
     const friendsHtml = friendsList.length
       ? friendsList.map((f, idx) => {
           const invited = PRIVATE_ROOM.invitedIds.has(f.id);
+          const alreadyInRoom = roster.some(r => r.pid === f.id || r.name.toLowerCase() === f.name.toLowerCase());
           return `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(15,23,42,0.92);border:1px solid rgba(148,163,184,0.22);padding:7px 8px;border-radius:3px">
               <div style="min-width:0">
                 <div style="font-size:11px;font-weight:900;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
                   <span style="color:${f.online ? '#22c55e' : '#64748b'}">●</span> ${esc(f.name)}
                 </div>
-                <div style="font-size:9px;color:#94a3b8;font-weight:700">LV ${f.lvl} · ${f.online ? 'ONLINE' : 'OFFLINE'}</div>
+                <div style="font-size:9px;color:#94a3b8;font-weight:700">LV ${f.lvl} · ${alreadyInRoom ? 'IN ROOM' : (f.online ? 'ONLINE' : 'OFFLINE')}</div>
               </div>
-              <button type="button" class="pm-inv-friend" data-fidx="${idx}" style="background:${invited ? '#22c55e' : '#facc15'};color:#080e1c;font-weight:900;font-size:10px;padding:5px 8px;border:none;border-radius:3px;cursor:pointer;flex-shrink:0">
-                ${invited ? '✓ SENT' : '+ INVITE'}
+              <button type="button" class="pm-inv-friend" data-fidx="${idx}" ${alreadyInRoom ? 'disabled' : ''} style="background:${alreadyInRoom ? '#334155' : (invited ? '#22c55e' : '#facc15')};color:${alreadyInRoom ? '#94a3b8' : '#080e1c'};font-weight:900;font-size:10px;padding:5px 8px;border:none;border-radius:3px;cursor:${alreadyInRoom ? 'default' : 'pointer'};flex-shrink:0">
+                ${alreadyInRoom ? 'JOINED' : (invited ? '✓ SENT' : '+ INVITE')}
               </button>
             </div>
           `;
         }).join('')
       : `<div style="font-size:11px;color:#94a3b8;text-align:center;padding:10px 8px;background:rgba(15,23,42,0.75);border-radius:3px;border:1px dashed rgba(148,163,184,0.25)">
-           No friends in your account list yet.<br><span style="color:#38bdf8">Enter a Friend's Room ID on the left or share your Room ID.</span>
+           No friends found in your friends list.<br><span style="color:#38bdf8">Add friends in Clan/Social or share your Room ID.</span>
          </div>`;
 
-    const invitesAndRequestsHtml = (PRIVATE_ROOM.incomingInvites.length || PRIVATE_ROOM.joinRequests.length)
+    const invitesHtml = PRIVATE_ROOM.incomingInvites.length
       ? `
         <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:4px">
           ${PRIVATE_ROOM.incomingInvites.map((inv, idx) => `
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(56,189,248,0.14);border:1px solid #38bdf8;padding:6px 8px;border-radius:3px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(56,189,248,0.16);border:1px solid #38bdf8;padding:6px 8px;border-radius:3px">
               <div style="min-width:0;font-size:10px;color:#f8fafc">
-                <b>${esc(inv.fromName || 'Friend')}</b> invited you<br><span style="color:#facc15">ID: ${esc(inv.roomId)}</span>
+                <b>${esc(inv.fromName || 'Friend')}</b> invited you<br><span style="color:#facc15">ID: ${esc(inv.roomId)} · ${esc(inv.mapName || '')}</span>
               </div>
-              <button type="button" class="pm-accept-inv" data-iidx="${idx}" style="background:#22c55e;color:#080e1c;font-weight:900;font-size:10px;padding:4px 8px;border:none;border-radius:3px;cursor:pointer">JOIN</button>
-            </div>
-          `).join('')}
-          ${PRIVATE_ROOM.joinRequests.map(req => `
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;background:rgba(34,197,94,0.14);border:1px solid #22c55e;padding:5px 8px;border-radius:3px;font-size:10px;color:#4ade80">
-              <span><b>${esc(req.fromName || 'Player')}</b> joined room</span>
-              <span>✓</span>
+              <button type="button" class="pm-accept-inv" data-iidx="${idx}" style="background:#22c55e;color:#080e1c;font-weight:900;font-size:10px;padding:5px 9px;border:none;border-radius:3px;cursor:pointer">JOIN</button>
             </div>
           `).join('')}
         </div>
@@ -1888,10 +1953,10 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         </div>
       </div>
 
-      <!-- SCROLLABLE BODY: STACKS ON MOBILE, 3-COLUMN ON DESKTOP -->
+      <!-- SCROLLABLE BODY -->
       <div class="pm-grid" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px">
         <style>
-          .pm-grid { display:grid; grid-template-columns:250px 1fr 230px; gap:12px; align-content:start; }
+          .pm-grid { display:grid; grid-template-columns:255px 1fr 240px; gap:12px; align-content:start; }
           @media (max-width: 820px) {
             .pm-grid { grid-template-columns:1fr; gap:12px; padding-bottom:24px; }
           }
@@ -1924,11 +1989,11 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
           </div>
 
           <div>
-            <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em;margin-bottom:5px">BATTLE MAP</div>
+            <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em;margin-bottom:5px">BATTLE MAP (SYNCED FOR ALL)</div>
             <div style="display:flex;flex-direction:column;gap:4px">
-              ${mapOptions.map(mp => `
-                <button type="button" class="pm-map-btn" data-map="${mp.id}" data-name="${mp.label}" style="text-align:left;padding:7px 9px;font-weight:800;font-size:11px;border-radius:3px;cursor:pointer;border:1px solid ${PRIVATE_ROOM.mapId === mp.id ? '#38bdf8' : 'rgba(148,163,184,0.22)'};background:${PRIVATE_ROOM.mapId === mp.id ? 'rgba(56,189,248,0.2)' : '#0f172a'};color:${PRIVATE_ROOM.mapId === mp.id ? '#38bdf8' : '#cbd5e1'}">
-                  ${mp.label}
+              ${ALL_BATTLE_MAPS.map(mp => `
+                <button type="button" class="pm-map-btn" data-map="${mp.id}" data-name="${mp.name}" style="text-align:left;padding:7px 9px;font-weight:800;font-size:11px;border-radius:3px;cursor:pointer;border:1px solid ${PRIVATE_ROOM.mapId === mp.id ? '#38bdf8' : 'rgba(148,163,184,0.22)'};background:${PRIVATE_ROOM.mapId === mp.id ? 'rgba(56,189,248,0.2)' : '#0f172a'};color:${PRIVATE_ROOM.mapId === mp.id ? '#38bdf8' : '#cbd5e1'}">
+                  ${mp.name}
                 </button>
               `).join('')}
             </div>
@@ -1965,20 +2030,20 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
           </div>
         </div>
 
-        <!-- FRIEND INVITE & JOIN REQUESTS PANEL -->
+        <!-- FRIEND INVITE PANEL -->
         <div style="background:rgba(10,16,30,0.92);border:1px solid rgba(148,163,184,0.25);border-radius:4px;padding:11px;display:flex;flex-direction:column;gap:9px">
           <div style="background:#e2e8f0;color:#080e1c;padding:6px 10px;font-weight:900;font-size:11px;letter-spacing:.1em;text-align:center;border-radius:2px">
-            INVITE ≪
+            INVITE FRIENDS ≪
           </div>
 
-          ${invitesAndRequestsHtml}
+          ${invitesHtml}
 
           <button type="button" id="pm-share-invite-btn" style="background:linear-gradient(90deg,#0284c7,#2563eb);border:1px solid #38bdf8;color:#fff;font-weight:900;font-size:11px;padding:7px;border-radius:3px;cursor:pointer">
-            📤 COPY ROOM ID & LINK
+            📤 COPY ROOM ID & INVITE LINK
           </button>
 
-          <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em">FRIENDS LIST</div>
-          <div style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto">
+          <div style="font-size:10px;font-weight:800;color:#94a3b8;letter-spacing:.06em">YOUR FRIENDS (${friendsList.length})</div>
+          <div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
             ${friendsHtml}
           </div>
         </div>
@@ -1989,7 +2054,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <button type="button" id="pm-loadout-btn" style="background:#1e293b;border:1px solid rgba(148,163,184,0.4);color:#f8fafc;font-weight:900;font-size:11px;padding:8px 13px;border-radius:3px;cursor:pointer">🎒 LOADOUT</button>
           <div style="background:rgba(15,23,42,0.9);border:1px solid rgba(148,163,184,0.22);padding:8px 12px;border-radius:3px;font-size:11px;color:#cbd5e1">
-            <b style="color:#facc15">[ROOM]</b> ${totalPlayers < 2 ? 'Enter Room ID to join or invite a friend...' : `${readyCount}/${totalPlayers} Players Ready for ${PRIVATE_ROOM.mode.toUpperCase()}`}
+            <b style="color:#facc15">[ROOM ${esc(PRIVATE_ROOM.roomId)}]</b> ${totalPlayers < 2 ? 'Invite a friend or have them enter Room ID...' : `${readyCount}/${totalPlayers} Ready · Map: ${esc(PRIVATE_ROOM.mapName)}`}
           </div>
         </div>
 
@@ -2059,7 +2124,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     if (shareInvBtn) {
       shareInvBtn.onclick = () => {
         const shareUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(PRIVATE_ROOM.roomId)}`;
-        const shareText = `Join my Private ${PRIVATE_ROOM.mode.toUpperCase()} Room! Room ID: ${PRIVATE_ROOM.roomId}\n${shareUrl}`;
+        const shareText = `Join my Private ${PRIVATE_ROOM.mode.toUpperCase()} Room on ${PRIVATE_ROOM.mapName}! Room ID: ${PRIVATE_ROOM.roomId}\n${shareUrl}`;
         if (navigator.share) {
           navigator.share({ title: 'Private Multiplayer Invite', text: shareText, url: shareUrl }).catch(() => {});
         } else if (navigator.clipboard) {
@@ -2105,7 +2170,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       btn.onclick = () => {
         if (!PRIVATE_ROOM.isHost) return toast('Only the Room Host can change match mode');
         PRIVATE_ROOM.mode = btn.dataset.mode;
-        PRIVATE_ROOM.mapName = (PRIVATE_ROOM.mapId === 'killhouse_1v1' ? 'TACTICAL KILLHOUSE ' : PRIVATE_ROOM.mapName.split(' ')[0] + ' ') + PRIVATE_ROOM.mode.toUpperCase();
         pushLobbySync();
         renderPrivateSlideBody();
       };
@@ -2114,8 +2178,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     screen.querySelectorAll('.pm-map-btn').forEach(btn => {
       btn.onclick = () => {
         if (!PRIVATE_ROOM.isHost) return toast('Only the Room Host can change map');
-        PRIVATE_ROOM.mapId = btn.dataset.map;
-        PRIVATE_ROOM.mapName = btn.dataset.name;
+        setSyncedMapSelection(btn.dataset.map, btn.dataset.name);
         pushLobbySync();
         renderPrivateSlideBody();
       };
@@ -2179,14 +2242,14 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
   function openPrivateSlide(autoJoinCode = '') {
     PRIVATE_ROOM.active = true;
     PRIVATE_ROOM.screenOpen = true;
-    syncInvitesAndRequestsFromStorage();
+    syncInvitesFromStorage();
 
     if (autoJoinCode) {
       joinRoomNow(autoJoinCode);
     } else if (!PRIVATE_ROOM.roomId) {
       createRoomNow();
     } else {
-      enableLobbyNetworkBridge();
+      ensureLobbyNetworkBridge();
       pushLobbySync();
     }
 
@@ -2207,7 +2270,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         return;
       }
       const rooms = readStoredRooms();
-      syncInvitesAndRequestsFromStorage(rooms);
+      syncInvitesFromStorage(rooms);
       if (PRIVATE_ROOM.roomId && rooms[PRIVATE_ROOM.roomId]) {
         applyRoomSnapshot(rooms[PRIVATE_ROOM.roomId]);
       }
@@ -2220,7 +2283,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         try { ingestSquadMembers(squadMembers()); } catch (e) {}
       }
       pushLobbySync();
-    }, 600);
+    }, 550);
   }
 
   function closePrivateSlide(launchingMatch = false) {
@@ -2231,19 +2294,31 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     if (!launchingMatch) {
       PRIVATE_ROOM.active = false;
       PRIVATE_ROOM.started = false;
-      disableLobbyNetworkBridge();
-    } else {
-      disableLobbyNetworkBridge();
     }
   }
 
   window.openPrivateRoom = openPrivateSlide;
+
+  // Background Home-Lobby Map Sync Poller (keeps PC & Mobile Home Lobby on the exact same map)
+  setInterval(() => {
+    if (AR && !AR.isLobby) return;
+    if (typeof SQUAD_ID !== 'undefined' && SQUAD_ID) {
+      ensureLobbyNetworkBridge();
+      if (typeof squadMembers === 'function') {
+        try { ingestSquadMembers(squadMembers()); } catch (e) {}
+      }
+      if (typeof syncBattleState === 'function') {
+        try { syncBattleState(); } catch (e) {}
+      }
+    }
+  }, 900);
 
   const urlRoom = new URLSearchParams(window.location.search).get('room');
   if (urlRoom) {
     setTimeout(() => openPrivateSlide(urlRoom), 450);
   }
 
+  // Inject Private Room button + ALL maps (including Tactical Killhouse 3D) into Home Lobby on BOTH PC and Mobile
   function injectIntoBattleMapsScreen() {
     const ui = document.getElementById('ui');
     if (!ui) return;
@@ -2267,16 +2342,52 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       }
     }
 
-    if (!document.getElementById('priv-map-card')) {
-      const allEls = Array.from(ui.querySelectorAll('*'));
-      const shipmentCard = allEls.find(el => {
-        const t = (el.textContent || '').toUpperCase();
-        const pt = el.parentElement ? (el.parentElement.textContent || '').toUpperCase() : '';
-        return t.includes('SHIPMENT 1944') && !t.includes('FIRING RANGE') && pt.includes('FIRING RANGE') && pt.includes('NUKETOWN OPS');
+    const allEls = Array.from(ui.querySelectorAll('*'));
+    const shipmentCard = allEls.find(el => {
+      const t = (el.textContent || '').toUpperCase();
+      const pt = el.parentElement ? (el.parentElement.textContent || '').toUpperCase() : '';
+      return t.includes('SHIPMENT 1944') && !t.includes('FIRING RANGE') && pt.includes('FIRING RANGE') && pt.includes('NUKETOWN OPS');
+    });
+
+    if (shipmentCard && shipmentCard.parentElement) {
+      const mapListCol = shipmentCard.parentElement;
+
+      // Ensure Tactical Killhouse 3D map card is visible on BOTH PC and Mobile Home Lobby
+      if (!document.getElementById('killhouse-map-card') && !(mapListCol.textContent || '').toUpperCase().includes('TACTICAL KILLHOUSE')) {
+        const khCard = document.createElement('div');
+        khCard.id = 'killhouse-map-card';
+        khCard.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:11px 14px;margin-top:6px;border-radius:3px;border:1px solid rgba(56,189,248,0.45);background:rgba(15,23,42,0.85);cursor:pointer;';
+        khCard.innerHTML = `
+          <div>
+            <div style="font-weight:900;font-size:13px;color:#38bdf8;letter-spacing:.04em">TACTICAL KILLHOUSE 3D</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:2px">SYMMETRICAL 3D PVP ARENA · PC & MOBILE</div>
+          </div>
+          <span style="background:#38bdf8;color:#080e1c;font-weight:900;font-size:10px;padding:4px 8px;border-radius:2px">SELECT</span>
+        `;
+        khCard.onclick = e => {
+          e.stopPropagation();
+          setSyncedMapSelection('killhouse_1v1', 'TACTICAL KILLHOUSE 3D');
+          pushLobbySync();
+          if (typeof toast === 'function') toast('🗺️ Map Selected: TACTICAL KILLHOUSE 3D');
+        };
+        mapListCol.appendChild(khCard);
+      }
+
+      // Hook clicks on existing Home Lobby map cards so selecting any map syncs immediately to teammates
+      Array.from(mapListCol.children).forEach(child => {
+        if (child.dataset.syncHooked || child.id === 'priv-map-card') return;
+        child.dataset.syncHooked = '1';
+        child.addEventListener('click', () => {
+          const txt = (child.textContent || '').toUpperCase();
+          const matched = ALL_BATTLE_MAPS.find(m => txt.includes(m.name));
+          if (matched) {
+            setSyncedMapSelection(matched.id, matched.name);
+            pushLobbySync();
+          }
+        });
       });
 
-      if (shipmentCard && shipmentCard.parentElement) {
-        const mapListCol = shipmentCard.parentElement;
+      if (!document.getElementById('priv-map-card')) {
         const privCard = document.createElement('div');
         privCard.id = 'priv-map-card';
         privCard.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 14px;margin-top:6px;border-radius:3px;border:1px solid rgba(250,204,21,0.55);background:rgba(15,23,42,0.9);cursor:pointer;';
@@ -2285,7 +2396,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
             <div style="font-weight:900;font-size:14px;color:#facc15;letter-spacing:.04em">
               🔒 PRIVATE MULTIPLAYER <span style="font-size:11px;color:#38bdf8;font-weight:800">(CODM LOBBY)</span>
             </div>
-            <div style="font-size:11px;color:#cbd5e1;margin-top:2px">1V1 / 2V2 CUSTOM ROOM · FRIEND INVITE · READY CHECK</div>
+            <div style="font-size:11px;color:#cbd5e1;margin-top:2px">1V1 / 2V2 / 5V5 · MAP SELECT · FRIEND INVITE</div>
           </div>
           <span style="background:#facc15;color:#080e1c;font-weight:900;font-size:11px;padding:5px 10px;border-radius:2px;letter-spacing:.05em">OPEN LOBBY</span>
         `;
@@ -2319,9 +2430,38 @@ function startMatch(squadId = null) {
   AR_LOADING = true;
   if (typeof SFX !== 'undefined' && SFX.deploy) SFX.deploy();
 
-  const mapCfg = PRIVATE_ROOM.active
-    ? { id: PRIVATE_ROOM.mapId || 'killhouse_1v1', name: PRIVATE_ROOM.mapName || ('TACTICAL KILLHOUSE ' + PRIVATE_ROOM.mode.toUpperCase()), sky: resolveSkyHex(null, PRIVATE_ROOM.mapId || 'killhouse_1v1'), isPrivate: true, mode: PRIVATE_ROOM.mode }
-    : ((typeof activeMap === 'function') ? activeMap() : { id: 'firing_range', name: 'FIRING RANGE', sky: 0x6ea8dc });
+  // Resolve synced map across Private Room OR Home Lobby Squad so Host & Friend always enter the EXACT same map
+  let resolvedMap = null;
+  if (PRIVATE_ROOM.active) {
+    const m = getMapById(PRIVATE_ROOM.mapId);
+    resolvedMap = {
+      id: m.id,
+      name: PRIVATE_ROOM.mapName || m.name,
+      sky: resolveSkyHex(m.sky, m.id),
+      isPrivate: true,
+      mode: PRIVATE_ROOM.mode
+    };
+  } else {
+    if (typeof squadMembers === 'function') {
+      try {
+        const mems = squadMembers();
+        const hostMem = Array.isArray(mems) ? mems.find(m => m && m.isHost && m.battle && m.battle.mapId) : null;
+        if (hostMem) {
+          setSyncedMapSelection(hostMem.battle.mapId, hostMem.battle.mapName);
+        }
+      } catch (e) {}
+    }
+    if (window.__SYNCED_MATCH_MAP && window.__SYNCED_MATCH_MAP.id) {
+      const m = getMapById(window.__SYNCED_MATCH_MAP.id);
+      resolvedMap = { id: m.id, name: window.__SYNCED_MATCH_MAP.name || m.name, sky: resolveSkyHex(m.sky, m.id) };
+    } else if (typeof activeMap === 'function') {
+      resolvedMap = activeMap();
+    } else {
+      resolvedMap = getMapById('firing_range');
+    }
+  }
+
+  const mapCfg = resolvedMap;
 
   const loadEl = document.createElement('div');
   loadEl.id = 'ar-load';
@@ -2489,8 +2629,8 @@ function launchArenaWorld(squadId, mapCfg) {
     </div>` : '';
 
   const roomBannerHtml = isPrivatePvP
-    ? `<div style="background:rgba(15,23,42,0.92);border:1px solid #facc15;color:#f8fafc;padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:900;letter-spacing:.05em">🔒 ${esc(PRIVATE_ROOM.mode.toUpperCase())} · TEAM ${esc(PRIVATE_ROOM.myTeam.toUpperCase())} · ID: <span style="color:#facc15">${esc(PRIVATE_ROOM.roomId)}</span></div>`
-    : '';
+    ? `<div style="background:rgba(15,23,42,0.92);border:1px solid #facc15;color:#f8fafc;padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:900;letter-spacing:.05em">🔒 ${esc(PRIVATE_ROOM.mode.toUpperCase())} · ${esc(mapCfg.name)} · TEAM ${esc(PRIVATE_ROOM.myTeam.toUpperCase())}</div>`
+    : `<div style="background:rgba(15,23,42,0.88);border:1px solid #38bdf8;color:#38bdf8;padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:900;letter-spacing:.05em">🗺️ ${esc(mapCfg.name)}</div>`;
 
   arenaEl.innerHTML = `
     <canvas id="acv"></canvas>
@@ -2552,7 +2692,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
       <div class="sq-bhud hud-movable" id="ar-sqhud" style="${hStyle('sqhud', false)}"></div>
       ${pcKeysHtml}
-      <div class="mfeed" id="ar-feed">${isPrivatePvP ? '🔒 PRIVATE ' + esc(PRIVATE_ROOM.mode.toUpperCase()) + ' · ROOM ' + esc(PRIVATE_ROOM.roomId) + ' · ELIMINATE OPPONENT' : (isPC ? '🎯 SCROLL WHEEL: ALL GUNS · SNIPER: HOLD LMB TO SCOPE & RELEASE TO FIRE' : 'MAP: ' + esc(mapCfg.name) + ' · ELIMINATE HOSTILES')}</div>
+      <div class="mfeed" id="ar-feed">${isPrivatePvP ? '🔒 PRIVATE ' + esc(PRIVATE_ROOM.mode.toUpperCase()) + ' · MAP: ' + esc(mapCfg.name) : 'MAP: ' + esc(mapCfg.name) + ' · ELIMINATE HOSTILES'}</div>
 
       <div class="hctrl" id="hc-minimap" style="${hStyle('minimap')}"><canvas id="radar" width="84" height="84"></canvas></div>
       <div class="hctrl joy" id="hc-joy" style="${hStyle('joy')}"><div class="knob" id="hc-knob"></div></div>
@@ -4244,6 +4384,8 @@ function launchArenaWorld(squadId, mapCfg) {
     getPacket() {
       return {
         inMatch: true,
+        mapId: mapCfg.id,
+        mapName: mapCfg.name,
         team: PRIVATE_ROOM.myTeam,
         ready: true,
         started: true,
@@ -4308,134 +4450,50 @@ function exitMatch(claimRewards = false) {
     if (typeof addXP === 'function') addXP(bonusXp);
     if (typeof save === 'function') save();
     if (typeof SFX !== 'undefined' && SFX.lvlup) SFX.lvlup();
-    toast(`🏆 EXTRACTED (${esc(mapName)})! ${kills} Kills · +${bonusXp} XP · +${bonusCoins} 🪙 · +${bonusCp} 💎 CP`);
+    toast(`🏆 EXTRACTED (${esc(mapName)})! +${bonusCoins} 🪙 · +${bonusCp} CP · +${bonusXp} XP`);
   } else {
-    toast('🚪 Exited 3D Battle Arena');
+    toast('🚪 Exited Battle');
   }
   if (typeof render === 'function') render();
 }
 
-/* ===== CUSTOM HUD LAYOUT EDITOR ===== */
-function openHudEditor() {
-  const keys = [
-    ['joy', 'JOYSTICK', 86],
-    ['fire', 'FIRE', 64],
-    ['scope', 'SCOPE', 50],
-    ['jump', 'JUMP', 50],
-    ['crouch', 'SLIDE', 48],
-    ['reload', 'RELOAD', 50],
-    ['grenade', 'GRENADE', 46],
-    ['wswitch', 'GUN', 50],
-    ['cam', 'CAM', 48],
-    ['minimap', 'RADAR', 76],
-    ['hp', 'HP BAR', 72],
-    ['ammo', 'AMMO HUD', 76],
-    ['sqhud', 'SQUAD HUD', 76],
-    ['pckeys', 'PC KEYS', 74]
-  ];
-  const baseDefaults = {
-    minimap: { x: 2, y: 18, s: 100, o: 95 },
-    joy:     { x: 4, y: 68, s: 100, o: 95 },
-    fire:    { x: 84, y: 64, s: 100, o: 95 },
-    scope:   { x: 75, y: 50, s: 90, o: 90 },
-    jump:    { x: 88, y: 46, s: 90, o: 90 },
-    crouch:  { x: 88, y: 31, s: 90, o: 90 },
-    reload:  { x: 76, y: 76, s: 90, o: 90 },
-    grenade: { x: 67, y: 64, s: 88, o: 90 },
-    wswitch: { x: 67, y: 40, s: 88, o: 90 },
-    cam:     { x: 76, y: 24, s: 88, o: 90 },
-    hp:      { x: 1, y: 1, s: 100, o: 95 },
-    ammo:    { x: 16, y: 1, s: 100, o: 95 },
-    sqhud:   { x: 1, y: 12, s: 100, o: 95 },
-    pckeys:  { x: 1, y: 74, s: 100, o: 95 }
-  };
-  const draft = JSON.parse(JSON.stringify(Object.assign({}, baseDefaults, (typeof defHud === 'function' ? defHud() : {}), (S.cfg && S.cfg.hud) || {})));
-  let sel = 'fire';
-
-  const ed = document.createElement('div');
-  ed.className = 'hud-ed';
-  ed.innerHTML = `
-    <div class="hud-bar">
-      <b style="color:var(--y)">🎛️ CUSTOM HUD (ALL ITEMS)</b>
-      <span class="s" id="he-lbl">Selected: FIRE</span>
-      <label class="s">Size <input type="range" id="he-s" min="55" max="150" value="${draft[sel].s}" style="width:5.2rem"></label>
-      <label class="s">Alpha <input type="range" id="he-o" min="25" max="100" value="${draft[sel].o}" style="width:5.2rem"></label>
-      <button class="sm alt" id="he-rst">RESET</button>
-      <button class="sm" id="he-save">SAVE & EXIT</button>
+function confirmExitMatch() {
+  if (!AR) return;
+  AR.paused = 1;
+  if (document.pointerLockElement) {
+    try { document.exitPointerLock(); } catch (e) {}
+  }
+  const { kills, mapName } = AR.stats();
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="pop R" style="max-width:25rem;text-align:center">
+      <div class="rR">🚪 EXIT 3D BATTLE?</div>
+      <div class="s" style="margin:6px 0 12px">Map: <b>${esc(mapName)}</b> · Eliminations: <b>${kills}</b></div>
+      <div class="row" style="justify-content:center">
+        <button class="sm alt" id="m-resume">RESUME</button>
+        <button class="sm" id="m-claim">CLAIM REWARDS & EXIT</button>
+      </div>
     </div>
   `;
-  document.body.appendChild(ed);
-
-  const sInp = document.getElementById('he-s');
-  const oInp = document.getElementById('he-o');
-  const lbl = document.getElementById('he-lbl');
-  const els = {};
-
-  function applyItem(k) {
-    const d = draft[k] || baseDefaults[k], el = els[k];
-    if (!d || !el) return;
-    el.style.left = d.x + '%';
-    el.style.top = d.y + '%';
-    el.style.transform = `scale(${d.s / 100})`;
-    el.style.opacity = d.o / 100;
-  }
-
-  function selectKey(k) {
-    sel = k;
-    if (!draft[sel]) draft[sel] = Object.assign({}, baseDefaults[sel] || { x: 20, y: 20, s: 100, o: 95 });
-    Object.keys(els).forEach(x => els[x].classList.toggle('sel', x === k));
-    lbl.textContent = 'Selected: ' + k.toUpperCase();
-    sInp.value = draft[sel].s;
-    oInp.value = draft[sel].o;
-  }
-
-  keys.forEach(([k, name, sz]) => {
-    if (!draft[k]) draft[k] = Object.assign({}, baseDefaults[k] || { x: 20, y: 20, s: 100, o: 95 });
-    const it = document.createElement('div');
-    it.className = 'hud-item' + (k === sel ? ' sel' : '');
-    it.style.width = sz + 'px';
-    it.style.height = sz + 'px';
-    it.textContent = name;
-    els[k] = it;
-    applyItem(k);
-    ed.appendChild(it);
-
-    let dragging = false, ox = 0, oy = 0;
-    it.addEventListener('pointerdown', e => {
-      e.stopPropagation();
-      selectKey(k);
-      dragging = true;
-      it.setPointerCapture(e.pointerId);
-      const p = normPt(e.clientX, e.clientY);
-      const w = isPortrait() ? window.innerHeight : window.innerWidth;
-      const h = isPortrait() ? window.innerWidth : window.innerHeight;
-      ox = p.x - (draft[k].x / 100) * w;
-      oy = p.y - (draft[k].y / 100) * h;
-    });
-    it.addEventListener('pointermove', e => {
-      if (!dragging) return;
-      const p = normPt(e.clientX, e.clientY);
-      const w = isPortrait() ? window.innerHeight : window.innerWidth;
-      const h = isPortrait() ? window.innerWidth : window.innerHeight;
-      draft[k].x = Math.max(0, Math.min(92, Math.round(((p.x - ox) / w) * 100)));
-      draft[k].y = Math.max(6, Math.min(88, Math.round(((p.y - oy) / h) * 100)));
-      applyItem(k);
-    });
-    it.addEventListener('pointerup', () => { dragging = false; });
-    it.addEventListener('pointercancel', () => { dragging = false; });
-  });
-
-  sInp.oninput = () => { draft[sel].s = +sInp.value; applyItem(sel); };
-  oInp.oninput = () => { draft[sel].o = +oInp.value; applyItem(sel); };
-  document.getElementById('he-rst').onclick = () => {
-    Object.assign(draft, baseDefaults, (typeof defHud === 'function' ? defHud() : {}));
-    keys.forEach(([k]) => applyItem(k));
-    selectKey(sel);
+  document.body.appendChild(modal);
+  document.getElementById('m-resume').onclick = () => {
+    modal.remove();
+    if (AR) {
+      AR.paused = 0;
+      if (isPCDevice()) {
+        const acvEl = document.getElementById('acv');
+        if (acvEl && acvEl.requestPointerLock) {
+          try {
+            const p = acvEl.requestPointerLock();
+            if (p && p.catch) p.catch(() => {});
+          } catch (e) {}
+        }
+      }
+    }
   };
-  document.getElementById('he-save').onclick = () => {
-    S.cfg.hud = draft;
-    save();
-    ed.remove();
-    toast('🎛️ Custom HUD layout saved!');
+  document.getElementById('m-claim').onclick = () => {
+    modal.remove();
+    exitMatch(true);
   };
 }
