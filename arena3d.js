@@ -14,6 +14,19 @@ function shortestAngleDiff(from, to) {
   return d;
 }
 
+/* Parse any map sky color (number, '#hex', '0xhex', or undefined) safely into a Three.js integer */
+function resolveSkyHex(rawSky, mapId) {
+  if (typeof rawSky === 'number' && !isNaN(rawSky)) return rawSky;
+  if (typeof rawSky === 'string') {
+    const clean = rawSky.trim().replace(/^#/, '').replace(/^0x/i, '');
+    const parsed = parseInt(clean, 16);
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (mapId === 'nuketown') return 0xd99b52;
+  if (mapId === 'shipment') return 0x475569;
+  return 0x6ea8dc;
+}
+
 /* ===== PROCEDURAL CANVAS TEXTURES FOR REALISTIC 3D ENVIRONMENT ===== */
 const TEX_CACHE = {};
 function getArenaTextures(mapId = 'firing_range') {
@@ -36,66 +49,52 @@ function getArenaTextures(mapId = 'firing_range') {
   const isDesert = mapId === 'nuketown';
   const isDock = mapId === 'shipment';
 
-  // 1. Terrain Grass / Desert Earth Texture
   const groundTex = makeCanvasTex(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = isDesert ? '#8d734b' : isDock ? '#3b424c' : '#4a6332';
+    ctx.fillStyle = isDesert ? '#9c7f54' : isDock ? '#475569' : '#4f6d34';
     ctx.fillRect(0, 0, w, h);
     for (let i = 0; i < 1600; i++) {
       const x = Math.random() * w, y = Math.random() * h;
       ctx.fillStyle = isDesert
-        ? (Math.random() > 0.5 ? '#785e38' : '#a3875c')
+        ? (Math.random() > 0.5 ? '#856941' : '#b39466')
         : isDock
-          ? (Math.random() > 0.5 ? '#2e343d' : '#4b5563')
-          : (Math.random() > 0.45 ? '#3b5226' : Math.random() > 0.2 ? '#5d7a3e' : '#6b5b3e');
+          ? (Math.random() > 0.5 ? '#334155' : '#64748b')
+          : (Math.random() > 0.45 ? '#3f5928' : Math.random() > 0.2 ? '#658843' : '#746344');
       ctx.fillRect(x, y, 2 + Math.random() * 3, 2 + Math.random() * 4);
     }
   }, 24, 24);
 
-  // 2. Cracked Asphalt Road Texture with Lane Markings & Curbs
   const roadTex = makeCanvasTex(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#262a33';
+    ctx.fillStyle = '#2a303c';
     ctx.fillRect(0, 0, w, h);
     for (let i = 0; i < 1200; i++) {
-      ctx.fillStyle = Math.random() > 0.5 ? '#1e222a' : '#323844';
+      ctx.fillStyle = Math.random() > 0.5 ? '#1f242e' : '#384050';
       ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
     }
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = '#94a3b8';
     ctx.fillRect(0, 0, 14, h);
     ctx.fillRect(w - 14, 0, 14, h);
-    ctx.fillStyle = '#cbd5e1';
+    ctx.fillStyle = '#e2e8f0';
     ctx.fillRect(20, 0, 4, h);
     ctx.fillRect(w - 24, 0, 4, h);
-    ctx.fillStyle = '#eab308';
+    ctx.fillStyle = '#facc15';
     ctx.fillRect(w / 2 - 4, 16, 3, 92);
     ctx.fillRect(w / 2 + 2, 16, 3, 92);
     ctx.fillRect(w / 2 - 4, 144, 3, 92);
     ctx.fillRect(w / 2 + 2, 144, 3, 92);
-    ctx.strokeStyle = '#14171d';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(45, 30); ctx.lineTo(75, 85); ctx.lineTo(62, 140);
-    ctx.moveTo(190, 110); ctx.lineTo(165, 175); ctx.lineTo(185, 230);
-    ctx.stroke();
   }, 1, 14);
 
-  // 3. Tactical Building Concrete & Window Facade Texture
   const wallTex = makeCanvasTex(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = isDesert ? '#c29b6e' : '#64748b';
+    ctx.fillStyle = isDesert ? '#cfa87a' : '#78889c';
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(15,23,42,0.18)';
+    ctx.fillStyle = 'rgba(15,23,42,0.22)';
     for (let y = 0; y < h; y += 32) ctx.fillRect(0, y, w, 2);
     for (let x = 0; x < w; x += 64) ctx.fillRect(x, 0, 2, h);
-    const grd = ctx.createLinearGradient(0, h * 0.65, 0, h);
-    grd.addColorStop(0, 'rgba(15,23,42,0)');
-    grd.addColorStop(1, 'rgba(15,23,42,0.45)');
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, h * 0.65, w, h * 0.35);
     [[34, 42], [154, 42], [34, 148], [154, 148]].forEach(([wx, wy]) => {
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(wx - 4, wy - 4, 72, 62);
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(wx, wy, 64, 54);
-      ctx.fillStyle = 'rgba(148,197,255,0.24)';
+      ctx.fillStyle = 'rgba(148,197,255,0.28)';
       ctx.beginPath();
       ctx.moveTo(wx + 4, wy + 4); ctx.lineTo(wx + 36, wy + 4); ctx.lineTo(wx + 12, wy + 50); ctx.lineTo(wx + 4, wy + 50);
       ctx.fill();
@@ -105,14 +104,13 @@ function getArenaTextures(mapId = 'firing_range') {
     });
   }, 1, 1);
 
-  // 4. Corrugated Shipping Container Diffuse Texture (Mobile-WebGL1 safe, no bumpMap stall)
   const contTex = makeCanvasTex(128, 128, (ctx, w, h) => {
-    ctx.fillStyle = '#cbd5e1';
+    ctx.fillStyle = '#e2e8f0';
     ctx.fillRect(0, 0, w, h);
     for (let x = 0; x < w; x += 8) {
-      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
       ctx.fillRect(x, 0, 4, h);
-      ctx.fillStyle = 'rgba(15,23,42,0.34)';
+      ctx.fillStyle = 'rgba(15,23,42,0.36)';
       ctx.fillRect(x + 4, 0, 4, h);
     }
     ctx.fillStyle = 'rgba(15,23,42,0.55)';
@@ -120,13 +118,12 @@ function getArenaTextures(mapId = 'firing_range') {
     ctx.fillRect(0, h - 10, w, 10);
   }, 3, 1);
 
-  // 5. Wooden Supply Crate Texture
   const crateTex = makeCanvasTex(128, 128, (ctx, w, h) => {
-    ctx.fillStyle = '#855832';
+    ctx.fillStyle = '#9a683a';
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#6b4423';
+    ctx.fillStyle = '#784e28';
     for (let y = 0; y < h; y += 16) ctx.fillRect(0, y, w, 2);
-    ctx.strokeStyle = '#4a2e16';
+    ctx.strokeStyle = '#523418';
     ctx.lineWidth = 10;
     ctx.strokeRect(5, 5, w - 10, h - 10);
     ctx.beginPath();
@@ -140,25 +137,21 @@ function getArenaTextures(mapId = 'firing_range') {
 
 /* ===== DETAILED 3D WEAPON MODEL BUILDER (USED IN TPP, LOBBY & FPP VIEWMODEL) ===== */
 function buildDetailedGun3D(gid, isFpp = false) {
-  const it = ITEMS[gid] || ITEMS[3];
-  const rCol = RAR[it.r] ? RAR[it.r].c : 0x4aa8ff;
+  const it = (typeof ITEMS !== 'undefined' && ITEMS[gid]) ? ITEMS[gid] : { id: 3, r: 'R', cat: 'ar', name: 'M4A1' };
+  const rCol = (typeof RAR !== 'undefined' && RAR[it.r]) ? RAR[it.r].c : 0x4aa8ff;
   const isMythic = it.r === 'M' || it.r === 'L';
   const g = new THREE.Group();
 
-  const steel = new THREE.MeshStandardMaterial({ color: 0x1b202c, roughness: 0.35, metalness: 0.75 });
-  const gunmetal = new THREE.MeshStandardMaterial({ color: 0x2c3342, roughness: 0.45, metalness: 0.6 });
-  const polymer = new THREE.MeshStandardMaterial({ color: 0x222630, roughness: 0.72, metalness: 0.2 });
-  const woodOrGold = new THREE.MeshStandardMaterial({
-    color: it.id === 7 ? 0xf59e0b : it.id === 5 ? 0x7c2d12 : 0x232936,
-    roughness: it.id === 7 ? 0.25 : 0.58,
-    metalness: it.id === 7 ? 0.8 : 0.3
+  const steel = new THREE.MeshLambertMaterial({ color: 0x242b3a });
+  const gunmetal = new THREE.MeshLambertMaterial({ color: 0x3b4458 });
+  const polymer = new THREE.MeshLambertMaterial({ color: 0x2a303d });
+  const woodOrGold = new THREE.MeshLambertMaterial({
+    color: it.id === 7 ? 0xf59e0b : it.id === 5 ? 0x9a3412 : 0x333c4d
   });
-  const trim = new THREE.MeshStandardMaterial({
+  const trim = new THREE.MeshLambertMaterial({
     color: rCol,
-    roughness: 0.3,
-    metalness: 0.65,
     emissive: rCol,
-    emissiveIntensity: isMythic ? 0.55 : 0.16
+    emissiveIntensity: isMythic ? 0.55 : 0.2
   });
 
   const isSniper = it.cat === 'sniper';
@@ -266,7 +259,7 @@ function buildDetailedGun3D(gid, isFpp = false) {
     roof.position.set(0, 0.142, 0.01);
     g.add(roof);
 
-    const glassMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
+    const glassMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.25, side: THREE.DoubleSide });
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.042, 0.042), glassMat);
     glass.position.set(0, 0.116, 0.02);
     g.add(glass);
@@ -298,9 +291,9 @@ function createFppViewmodel() {
   const weaponPivot = new THREE.Group();
   swayGroup.add(weaponPivot);
 
-  const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
-  const gloveMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.65, metalness: 0.2 });
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0xd49b72, roughness: 0.7 });
+  const sleeveMat = new THREE.MeshLambertMaterial({ color: 0x263449 });
+  const gloveMat = new THREE.MeshLambertMaterial({ color: 0x475569 });
+  const skinMat = new THREE.MeshLambertMaterial({ color: 0xd49b72 });
 
   const rArm = new THREE.Group();
   const rForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.044, 0.34, 10), sleeveMat);
@@ -542,7 +535,7 @@ function makeSoldierAvatar(opts = {}) {
     }
   }
 
-  if (GLTF_CACHE && GLTF_CACHE.soldier && THREE.SkeletonUtils) {
+  if (typeof GLTF_CACHE !== 'undefined' && GLTF_CACHE && GLTF_CACHE.soldier && THREE.SkeletonUtils) {
     hasSkeletal = true;
     const model = THREE.SkeletonUtils.clone(GLTF_CACHE.soldier.scene);
     model.scale.setScalar(1.05);
@@ -551,11 +544,12 @@ function makeSoldierAvatar(opts = {}) {
 
     model.traverse(o => {
       if (o.isMesh) {
-        o.castShadow = true;
         if (tint && o.material) {
           o.material = o.material.clone();
-          o.material.emissive = new THREE.Color(tint);
-          o.material.emissiveIntensity = 0.14;
+          if (o.material.emissive) {
+            o.material.emissive = new THREE.Color(tint);
+            o.material.emissiveIntensity = 0.16;
+          }
         }
       }
       if (o.isBone) {
@@ -622,10 +616,10 @@ function makeSoldierAvatar(opts = {}) {
     }
     applyRifleHoldPose();
   } else {
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a077, roughness: 0.7 });
-    const vestMat = new THREE.MeshStandardMaterial({ color: armorCol, roughness: 0.6, metalness: 0.25 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1b2234, roughness: 0.8 });
-    const visorMat = new THREE.MeshStandardMaterial({ color: tint || 0x38bdf8, emissive: tint || 0x38bdf8, emissiveIntensity: 0.45, roughness: 0.2 });
+    const skinMat = new THREE.MeshLambertMaterial({ color: 0xd9a077 });
+    const vestMat = new THREE.MeshLambertMaterial({ color: armorCol });
+    const darkMat = new THREE.MeshLambertMaterial({ color: 0x263147 });
+    const visorMat = new THREE.MeshLambertMaterial({ color: tint || 0x38bdf8, emissive: tint || 0x38bdf8, emissiveIntensity: 0.45 });
 
     const body = new THREE.Group();
     grp.add(body);
@@ -725,7 +719,7 @@ function makeSoldierAvatar(opts = {}) {
 
 /* ===== WEAPON CONFIGS ===== */
 function getWeaponSpec(gunId) {
-  const it = ITEMS[gunId] || ITEMS[3];
+  const it = (typeof ITEMS !== 'undefined' && ITEMS[gunId]) ? ITEMS[gunId] : { id: 3, r: 'R', cat: 'ar', name: 'M4A1' };
   const tierMul = { C: 1.0, R: 1.15, E: 1.3, L: 1.48, M: 1.7 }[it.r] || 1.0;
   const base = {
     smg:      { dmg: 22, rate: 105, mag: 36, res: 144, relMs: 1350, zoom: 42, spread: 0.028, pellets: 1 },
@@ -750,9 +744,9 @@ function startMatch(squadId = null) {
   if (AR || AR_LOADING) return;
   if (typeof THREE === 'undefined') return toast('3D Engine unavailable on this browser.');
   AR_LOADING = true;
-  SFX.deploy();
+  if (typeof SFX !== 'undefined' && SFX.deploy) SFX.deploy();
 
-  const mapCfg = activeMap();
+  const mapCfg = (typeof activeMap === 'function') ? activeMap() : { id: 'firing_range', name: 'FIRING RANGE', sky: 0x6ea8dc };
   const loadEl = document.createElement('div');
   loadEl.id = 'ar-load';
   loadEl.className = 'ar-load';
@@ -776,13 +770,12 @@ function startMatch(squadId = null) {
     if (stepEl && msg) stepEl.textContent = msg;
   };
 
-  // Preload Soldier.glb if not already cached (non-blocking with timeout so offline/slow net never hangs)
   const preloadSoldier = new Promise(resolve => {
-    if (GLTF_CACHE && GLTF_CACHE.soldier) return resolve();
+    if (typeof GLTF_CACHE !== 'undefined' && GLTF_CACHE && GLTF_CACHE.soldier) return resolve();
     if (!THREE.GLTFLoader) return resolve();
     let done = false;
     const finish = () => { if (!done) { done = true; resolve(); } };
-    setTimeout(finish, 600);
+    setTimeout(finish, 650);
     try {
       new THREE.GLTFLoader().load(
         'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb',
@@ -798,7 +791,7 @@ function startMatch(squadId = null) {
     }
   });
 
-  setTimeout(() => setProg(38, 'GENERATING PBR TERRAIN & BUILDING TEXTURES...'), 160);
+  setTimeout(() => setProg(38, 'GENERATING TERRAIN & BUILDING TEXTURES...'), 160);
   setTimeout(() => {
     try { getArenaTextures(mapCfg.id); } catch (e) {}
     setProg(68, 'ASSEMBLING 3D WEAPONS, BOTS & SQUAD HUD...');
@@ -806,7 +799,7 @@ function startMatch(squadId = null) {
 
   Promise.all([
     preloadSoldier,
-    new Promise(r => setTimeout(r, 720))
+    new Promise(r => setTimeout(r, 750))
   ]).then(() => {
     setProg(92, 'INITIALIZING 3D BATTLE ARENA...');
     requestAnimationFrame(() => {
@@ -833,19 +826,25 @@ function startMatch(squadId = null) {
 /* ===== MAIN 3D BATTLE WORLD ENGINE ===== */
 function launchArenaWorld(squadId, mapCfg) {
   const isPC = isPCDevice();
-  const primaryId = S.eq.gun >= 0 ? S.eq.gun : 3;
+  const primaryId = (S.eq && S.eq.gun >= 0) ? S.eq.gun : 3;
   const secondaryId = primaryId === 0 ? 1 : 0;
   const weapons = [getWeaponSpec(primaryId), getWeaponSpec(secondaryId)];
   const wState = weapons.map(w => ({ ammo: w.mag, reserve: w.res }));
   let wIdx = 0;
 
-  // Pause Lobby WebGL canvas so Mobile & PC GPUs dedicate 100% power to the 3D Arena
+  // Hide lobby UI & pause lobby canvas so Mobile & PC GPUs never conflict or bleed through
+  const lobbyUi = document.getElementById('ui');
+  if (lobbyUi) lobbyUi.style.display = 'none';
   const lobbyGl = document.getElementById('gl');
-  if (lobbyGl) lobbyGl.style.visibility = 'hidden';
+  if (lobbyGl) lobbyGl.style.display = 'none';
+
+  const skyHex = resolveSkyHex(mapCfg.sky, mapCfg.id);
+  const isDesert = mapCfg.id === 'nuketown';
 
   // Build Arena DOM
   const arenaEl = document.createElement('div');
   arenaEl.id = 'arena';
+  arenaEl.style.background = '#' + skyHex.toString(16).padStart(6, '0');
   const hudCfg = Object.assign({ crouch: { x: 85, y: 80, s: 90, o: 90 } }, defHud(), (S.cfg && S.cfg.hud) || {});
   const hStyle = k => {
     const h = hudCfg[k] || { x: 10, y: 10, s: 100, o: 95 };
@@ -925,20 +924,20 @@ function launchArenaWorld(squadId, mapCfg) {
     if (feedEl) feedEl.textContent = msg;
   }
 
-  // Create WebGLRenderer with automatic safe fallback for all mobile & PC browsers
+  // Create WebGLRenderer with safe fallback & guaranteed opaque sky color
   let renderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas: acv, antialias: S.cfg.gfx !== 'Low', powerPreference: 'high-performance' });
+    renderer = new THREE.WebGLRenderer({ canvas: acv, antialias: S.cfg.gfx !== 'Low', alpha: false });
   } catch (e) {
-    renderer = new THREE.WebGLRenderer({ canvas: acv, antialias: false });
+    renderer = new THREE.WebGLRenderer({ canvas: acv, antialias: false, alpha: false });
   }
-  const q = S.cfg.gfx || 'High';
+  const q = (S.cfg && S.cfg.gfx) || 'High';
   renderer.setPixelRatio(q === 'Low' ? 0.85 : q === 'Medium' ? 1.15 : Math.min(window.devicePixelRatio || 1, 1.75));
-  renderer.setClearColor(mapCfg.sky, 1);
+  renderer.setClearColor(skyHex, 1);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(mapCfg.sky);
-  scene.fog = new THREE.Fog(mapCfg.sky, 32, 110);
+  scene.background = new THREE.Color(skyHex);
+  scene.fog = new THREE.Fog(skyHex, 36, 115);
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.08, 140);
   scene.add(camera);
@@ -948,8 +947,10 @@ function launchArenaWorld(squadId, mapCfg) {
   fppVm.setGun(weapons[0].id);
   camera.add(fppVm.root);
 
-  scene.add(new THREE.HemisphereLight(0xe0f2fe, 0x334155, 1.15));
-  const sun = new THREE.DirectionalLight(0xfffbeb, 1.2);
+  // Bright, reliable Three-Point + Ambient Lighting so materials are NEVER black
+  scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+  scene.add(new THREE.HemisphereLight(0xf0f9ff, 0x475569, 0.75));
+  const sun = new THREE.DirectionalLight(0xfffbeb, 0.95);
   sun.position.set(24, 42, 20);
   scene.add(sun);
 
@@ -958,12 +959,12 @@ function launchArenaWorld(squadId, mapCfg) {
   // Textured Terrain Ground & Cracked Asphalt Highways
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(110, 110),
-    new THREE.MeshStandardMaterial({ map: tex.groundTex, roughness: 0.92 })
+    new THREE.MeshLambertMaterial({ map: tex.groundTex })
   );
   ground.rotation.x = -Math.PI / 2;
   scene.add(ground);
 
-  const roadMat = new THREE.MeshStandardMaterial({ map: tex.roadTex, roughness: 0.82 });
+  const roadMat = new THREE.MeshLambertMaterial({ map: tex.roadTex });
   const roadNS = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 98), roadMat);
   roadNS.rotation.x = -Math.PI / 2;
   roadNS.position.y = 0.02;
@@ -984,7 +985,7 @@ function launchArenaWorld(squadId, mapCfg) {
   function addBox(x, y, z, w, h, d, matOpts, solid = true) {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshStandardMaterial(matOpts)
+      new THREE.MeshLambertMaterial(matOpts)
     );
     mesh.position.set(x, y + h / 2, z);
     scene.add(mesh);
@@ -993,18 +994,18 @@ function launchArenaWorld(squadId, mapCfg) {
   }
 
   // Fortified Concrete Perimeter Walls
-  addBox(0, 0, -48, 98, 4.8, 2.2, { map: tex.wallTex, roughness: 0.85 });
-  addBox(0, 0, 48, 98, 4.8, 2.2, { map: tex.wallTex, roughness: 0.85 });
-  addBox(-48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex, roughness: 0.85 });
-  addBox(48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex, roughness: 0.85 });
+  addBox(0, 0, -48, 98, 4.8, 2.2, { map: tex.wallTex });
+  addBox(0, 0, 48, 98, 4.8, 2.2, { map: tex.wallTex });
+  addBox(-48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex });
+  addBox(48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex });
 
   // Multi-Story Textured Tactical Buildings with Roof Trim & Doors
   function buildTacticalBuilding(x, z, w, h, d, tintCol) {
-    addBox(x, 0, z, w, h, d, { map: tex.wallTex, color: tintCol, roughness: 0.78 });
-    addBox(x, h, z, w + 0.5, 0.45, d + 0.5, { color: 0x1e293b, roughness: 0.7 }, false);
+    addBox(x, 0, z, w, h, d, { map: tex.wallTex, color: tintCol });
+    addBox(x, h, z, w + 0.5, 0.45, d + 0.5, { color: 0x1e293b }, false);
     const door = new THREE.Mesh(
       new THREE.BoxGeometry(1.5, 2.4, 0.25),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6, roughness: 0.4 })
+      new THREE.MeshLambertMaterial({ color: 0x0f172a })
     );
     door.position.set(x, 1.2, z + (z < 0 ? d / 2 + 0.05 : -d / 2 - 0.05));
     scene.add(door);
@@ -1016,8 +1017,8 @@ function launchArenaWorld(squadId, mapCfg) {
 
   // Corrugated Steel Shipping Containers
   function buildContainer(x, z, w, h, d, col) {
-    addBox(x, 0, z, w, h, d, { color: col, map: tex.contTex, roughness: 0.55, metalness: 0.45 });
-    addBox(x, h, z, w + 0.12, 0.14, d + 0.12, { color: 0x1e293b, metalness: 0.65, roughness: 0.4 }, false);
+    addBox(x, 0, z, w, h, d, { color: col, map: tex.contTex });
+    addBox(x, h, z, w + 0.12, 0.14, d + 0.12, { color: 0x1e293b }, false);
   }
   buildContainer(-9.5, -4.5, 2.9, 2.6, 6.4, 0xdc2626);
   buildContainer(9.5, 4.5, 2.9, 2.6, 6.4, 0x2563eb);
@@ -1026,16 +1027,16 @@ function launchArenaWorld(squadId, mapCfg) {
 
   // Tactical Steel Watchtowers
   function buildWatchtower(x, z) {
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.4 });
+    const legMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
     [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]].forEach(([lx, lz]) => {
       const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7.2, 8), legMat);
       leg.position.set(x + lx, 3.6, z + lz);
       scene.add(leg);
     });
-    addBox(x, 6.4, z, 3.6, 0.28, 3.6, { color: 0x475569, metalness: 0.55 }, false);
+    addBox(x, 6.4, z, 3.6, 0.28, 3.6, { color: 0x475569 }, false);
     addBox(x, 6.7, z - 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
     addBox(x, 6.7, z + 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
-    addBox(x, 9.2, z, 4.0, 0.25, 4.0, { color: 0x7c2d12, roughness: 0.6 }, false);
+    addBox(x, 9.2, z, 4.0, 0.25, 4.0, { color: 0x7c2d12 }, false);
     addCollider(x, z, 3.0, 3.0, 7.5);
   }
   buildWatchtower(-34, -34);
@@ -1043,7 +1044,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
   // Sandbag Bunkers & Wooden Supply Crate Stacks
   function buildSandbagCover(x, z) {
-    const bagMat = new THREE.MeshStandardMaterial({ color: 0xa89470, roughness: 0.92 });
+    const bagMat = new THREE.MeshLambertMaterial({ color: 0xb59e78 });
     for (let row = 0; row < 3; row++) {
       for (let col = -2; col <= 2; col++) {
         const bag = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.36, 0.55), bagMat);
@@ -1057,21 +1058,21 @@ function launchArenaWorld(squadId, mapCfg) {
   buildSandbagCover(0, 11.5);
 
   [[-6.5, 8], [6.5, -8], [-12, -26], [12, 26]].forEach(([cx, cz]) => {
-    addBox(cx, 0, cz, 1.4, 1.4, 1.4, { map: tex.crateTex, roughness: 0.8 });
-    addBox(cx + 1.45, 0, cz, 1.2, 1.2, 1.2, { map: tex.crateTex, roughness: 0.8 });
-    addBox(cx + 0.6, 1.35, cz, 1.1, 1.1, 1.1, { map: tex.crateTex, roughness: 0.8 });
+    addBox(cx, 0, cz, 1.4, 1.4, 1.4, { map: tex.crateTex });
+    addBox(cx + 1.45, 0, cz, 1.2, 1.2, 1.2, { map: tex.crateTex });
+    addBox(cx + 0.6, 1.35, cz, 1.1, 1.1, 1.1, { map: tex.crateTex });
   });
 
   // 3D Trees & Foliage Clusters
   function buildTree(x, z, scale = 1) {
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.24 * scale, 0.36 * scale, 2.8 * scale, 8),
-      new THREE.MeshStandardMaterial({ color: 0x4a321f, roughness: 0.9 })
+      new THREE.MeshLambertMaterial({ color: 0x5c3e26 })
     );
     trunk.position.set(x, 1.4 * scale, z);
     scene.add(trunk);
 
-    const leafMat = new THREE.MeshStandardMaterial({ color: isDesert ? 0x6b7c3e : 0x2d5a27, roughness: 0.85, flatShading: true });
+    const leafMat = new THREE.MeshLambertMaterial({ color: isDesert ? 0x768745 : 0x34692d });
     [
       [0, 3.3 * scale, 0, 1.8 * scale],
       [-0.7 * scale, 2.8 * scale, 0.4 * scale, 1.3 * scale],
@@ -1092,7 +1093,7 @@ function launchArenaWorld(squadId, mapCfg) {
     const isMed = idx % 2 === 0;
     const m = new THREE.Mesh(
       new THREE.BoxGeometry(0.9, 0.7, 0.9),
-      new THREE.MeshStandardMaterial({ color: isMed ? 0x22c55e : 0xf5d300, emissive: isMed ? 0x15803d : 0xb45309, emissiveIntensity: 0.4 })
+      new THREE.MeshLambertMaterial({ color: isMed ? 0x22c55e : 0xf5d300, emissive: isMed ? 0x15803d : 0xb45309, emissiveIntensity: 0.45 })
     );
     m.position.set(pt[0], 0.45, pt[1]);
     scene.add(m);
@@ -1110,7 +1111,7 @@ function launchArenaWorld(squadId, mapCfg) {
   const keysDown = {};
 
   const playerAv = makeSoldierAvatar({
-    armorCol: S.eq.skin >= 0 ? RAR[ITEMS[S.eq.skin].r].c : 0x2563eb,
+    armorCol: (S.eq && S.eq.skin >= 0 && RAR[ITEMS[S.eq.skin].r]) ? RAR[ITEMS[S.eq.skin].r].c : 0x2563eb,
     gunId: weapons[0].id
   });
   scene.add(playerAv.grp);
@@ -1141,7 +1142,7 @@ function launchArenaWorld(squadId, mapCfg) {
   const botSpawns = [[-32, -32], [0, -34], [32, -32], [-34, 4], [34, -4], [0, -22]];
   const bots = botSpawns.map((sp, i) => {
     const gunId = i % 3 === 0 ? 7 : i % 2 === 0 ? 5 : 3;
-    const av = makeSoldierAvatar({ armorCol: 0xb91c1c, gunId, tint: 0xff2a55 });
+    const av = makeSoldierAvatar({ armorCol: 0xdc2626, gunId, tint: 0xff2a55 });
     av.grp.position.set(sp[0], 0, sp[1]);
     scene.add(av.grp);
     return {
@@ -1192,7 +1193,7 @@ function launchArenaWorld(squadId, mapCfg) {
     wIdx = typeof forceIdx === 'number' ? forceIdx : (wIdx + 1) % weapons.length;
     playerAv.setGun(weapons[wIdx].id);
     fppVm.setGun(weapons[wIdx].id);
-    SFX.equip('gun', weapons[wIdx].rarity);
+    if (typeof SFX !== 'undefined' && SFX.equip) SFX.equip('gun', weapons[wIdx].rarity);
     updateHud();
     setFeed(`🔫 EQUIPPED: ${weapons[wIdx].name}`);
   }
@@ -1204,7 +1205,7 @@ function launchArenaWorld(squadId, mapCfg) {
     reloadStartTs = performance.now();
     reloadDurMs = w.relMs;
     if (scoped) toggleScope(false);
-    SFX.reload();
+    if (typeof SFX !== 'undefined' && SFX.reload) SFX.reload();
     updateHud();
     setFeed(`🔄 RELOADING ${w.name}...`);
     setTimeout(() => {
@@ -1224,7 +1225,7 @@ function launchArenaWorld(squadId, mapCfg) {
       slideTimer = 0.78;
       slideDirX = Math.sin(charYaw) * -1;
       slideDirZ = Math.cos(charYaw) * -1;
-      SFX.back();
+      if (typeof SFX !== 'undefined' && SFX.back) SFX.back();
       setFeed('⚡ TACTICAL SLIDE!');
     } else if (isTap) {
       crouching = !crouching;
@@ -1236,11 +1237,11 @@ function launchArenaWorld(squadId, mapCfg) {
   }
 
   function throwGrenade() {
-    SFX.click();
+    if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
     const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch) + 0.35, -Math.cos(yaw) * Math.cos(pitch)).normalize();
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.16, 10, 10),
-      new THREE.MeshStandardMaterial({ color: 0x3f6212, emissive: 0xff2a55, emissiveIntensity: 0.4 })
+      new THREE.MeshLambertMaterial({ color: 0x3f6212, emissive: 0xff2a55, emissiveIntensity: 0.45 })
     );
     mesh.position.set(px, py + 1.45, pz);
     scene.add(mesh);
@@ -1260,7 +1261,7 @@ function launchArenaWorld(squadId, mapCfg) {
       slideTimer = 0;
       crouching = false;
       vy = 7.6 * boost;
-      SFX.click();
+      if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
     }
   }
 
@@ -1275,7 +1276,7 @@ function launchArenaWorld(squadId, mapCfg) {
     }
     lastShotTs = nowMs;
     st.ammo--;
-    SFX.shot();
+    if (typeof SFX !== 'undefined' && SFX.shot) SFX.shot();
     playerAv.triggerMuzzle();
     fppVm.triggerRecoil();
     updateHud();
@@ -1331,7 +1332,7 @@ function launchArenaWorld(squadId, mapCfg) {
 
       if (hitBot) {
         if (w.explosive) {
-          SFX.boom();
+          if (typeof SFX !== 'undefined' && SFX.boom) SFX.boom();
           bots.forEach(ob => {
             if (ob.alive && Math.hypot(ob.x - endPt.x, ob.z - endPt.z) < 6) damageBot(ob, w.dmg);
           });
@@ -1352,8 +1353,8 @@ function launchArenaWorld(squadId, mapCfg) {
       b.av.grp.position.y = 0.25;
       kills++;
       S.coins += 8;
-      addXP(15);
-      SFX.coin();
+      if (typeof addXP === 'function') addXP(15);
+      if (typeof SFX !== 'undefined' && SFX.coin) SFX.coin();
       updateHud();
       setFeed(`💀 ELIMINATED HOSTILE SOLDIER! (+15 XP · +8 🪙)`);
     }
@@ -1686,7 +1687,7 @@ function launchArenaWorld(squadId, mapCfg) {
     radarCtx.fill();
   }
 
-  // Main Arena Simulation Loop (Error-Guarded & Clamped Positive dt)
+  // Main Arena Simulation Loop
   let prevT = performance.now(), syncAccum = 0, rafId = 0, dustAccum = 0;
   function stepAndRender(nowT) {
     const dt = Math.max(0.001, Math.min(0.05, (nowT - prevT) / 1000));
@@ -1845,7 +1846,7 @@ function launchArenaWorld(squadId, mapCfg) {
         if (Math.hypot(px - pk.x, pz - pk.z) < 1.35) {
           pk.cd = 10;
           pk.mesh.visible = false;
-          SFX.coin();
+          if (typeof SFX !== 'undefined' && SFX.coin) SFX.coin();
           if (pk.isMed) {
             hp = Math.min(maxHp, hp + 40);
             setFeed('➕ MEDKIT PICKED UP (+40 HP)');
@@ -1871,7 +1872,7 @@ function launchArenaWorld(squadId, mapCfg) {
         }
         g.fuse -= dt;
         if (g.fuse <= 0) {
-          SFX.boom();
+          if (typeof SFX !== 'undefined' && SFX.boom) SFX.boom();
           const gx = g.mesh.position.x, gz = g.mesh.position.z;
           bots.forEach(b => {
             if (b.alive && Math.hypot(b.x - gx, b.z - gz) < 7.5) damageBot(b, 130);
@@ -1989,7 +1990,7 @@ function launchArenaWorld(squadId, mapCfg) {
       syncAccum += dt;
       if (syncAccum >= 0.35) {
         syncAccum = 0;
-        if (SQUAD_ID && typeof syncBattleState === 'function') syncBattleState();
+        if (typeof SQUAD_ID !== 'undefined' && SQUAD_ID && typeof syncBattleState === 'function') syncBattleState();
       }
     } catch (simErr) {
       console.error('Arena sim step warning:', simErr);
@@ -2037,13 +2038,14 @@ function launchArenaWorld(squadId, mapCfg) {
       }
       renderer.dispose();
       const glEl = document.getElementById('gl');
-      if (glEl) glEl.style.visibility = 'visible';
+      if (glEl) glEl.style.display = 'block';
+      const uiEl = document.getElementById('ui');
+      if (uiEl) uiEl.style.display = 'block';
     },
     stats: () => ({ kills, mapName: mapCfg.name })
   };
 
-  syncTeammates(squadMembers());
-  // Render initial frame immediately behind loading screen so world is 100% ready on reveal
+  if (typeof squadMembers === 'function') syncTeammates(squadMembers());
   stepAndRender(performance.now() + 16);
   rafId = requestAnimationFrame(loop);
 }
@@ -2064,14 +2066,14 @@ function exitMatch(claimRewards = false) {
     S.coins += bonusCoins;
     S.cp += bonusCp;
     if (kills >= 1) S.wins = (S.wins || 0) + 1;
-    addXP(bonusXp);
-    save();
-    SFX.lvlup();
+    if (typeof addXP === 'function') addXP(bonusXp);
+    if (typeof save === 'function') save();
+    if (typeof SFX !== 'undefined' && SFX.lvlup) SFX.lvlup();
     toast(`🏆 EXTRACTED (${esc(mapName)})! ${kills} Kills · +${bonusXp} XP · +${bonusCoins} 🪙 · +${bonusCp} 💎 CP`);
   } else {
     toast('🚪 Exited 3D Battle Arena');
   }
-  render();
+  if (typeof render === 'function') render();
 }
 
 /* ===== CUSTOM HUD LAYOUT EDITOR (SETTINGS -> CUSTOMIZE HUD) ===== */
