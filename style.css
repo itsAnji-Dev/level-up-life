@@ -27,7 +27,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--y)}
 .claim{background:#000a;border:1px solid var(--y);padding:5px;text-align:center;clip-path:var(--cut);font-size:.76rem}.claim button{margin-top:3px;width:100%;background:repeating-linear-gradient(-45deg,var(--y),var(--y) 7px,#c9ab00 7px,#c9ab00 14px);color:#000;font-weight:700;padding:3px}
 .mode{position:relative;height:2.65rem;text-align:left;padding:0 .7rem;font-weight:700;font-size:.84rem;background:linear-gradient(90deg,#0b1020,#2a3a70);border:1px solid #fff3;clip-path:var(--cut)}.mode small{display:block;font-size:.61rem;color:var(--y);font-weight:400}
 
-/* 5-PLAYER CODM-STYLE HOME LOBBY SQUAD DOCK, VOICE & NAMEPLATES */
 .sq-dock{position:absolute;left:8px;bottom:3.9rem;width:clamp(145px,21vw,210px);background:#090f22d8;border:1px solid #f5d30066;clip-path:var(--cut);padding:5px}
 .sq-hdr{background:linear-gradient(90deg,var(--y),#d4a900);color:#000;font-weight:900;font-size:.68rem;padding:2px 6px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
 .sq-vbtns{display:flex;gap:4px}
@@ -114,35 +113,62 @@ input[type=range]{padding:0;accent-color:var(--y);height:1.4rem;background:trans
 .al-bar i{display:block;height:100%;background:linear-gradient(90deg,#38bdf8,var(--y));transition:width .16s ease-out}
 .al-pct{font-size:.74rem;font-weight:900;color:var(--y);margin-top:6px}
 
-/* ===== PLAYABLE 3D BATTLE ARENA, TEAM SQUAD HUD, LOADOUT, PC KEYS, SLIDE FX, SCOPE & CUSTOM HUD ===== */
+/* ===== PLAYABLE 3D BATTLE ARENA, CODM GUNSMITH, FULLSCREEN, PC KEYS & CUSTOM HUD ===== */
 #arena{position:fixed;inset:0;z-index:80;pointer-events:none;background:#0a0e1f}
+#arena.mob-fs{z-index:120}
 #acv{position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:auto;touch-action:none}
 .ahud{position:fixed;inset:0;pointer-events:none}
 .ahud .hctrl{position:fixed;pointer-events:auto;touch-action:none;transform-origin:center center}
-.atop{position:fixed;top:8px;left:12px;right:12px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none}
-.atop button{pointer-events:auto}
-.ammo{background:#0b1328cc;border:2px solid #8ec5ff;padding:4px 12px;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);font-size:1.05rem;font-weight:900;display:flex;align-items:center;gap:8px}
-.hpbar{background:#000a;padding:4px 10px;border-left:3px solid #5be58a;font-size:.74rem}.hpbar div{width:8rem;height:.4rem;background:#fff2;margin-top:2px}.hpbar i{display:block;height:100%;background:#5be58a;transition:width .2s}
-.aright{display:flex;gap:6px;align-items:center}
+.hud-movable{position:fixed;pointer-events:auto;transform-origin:top left}
+.atop{position:fixed;top:0;left:0;right:0;height:44px;pointer-events:none}
+.atop button,.atop .hud-movable{pointer-events:auto}
+.ammo{background:#0b1328d9;border:2px solid #8ec5ff;padding:4px 12px;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);font-size:1.02rem;font-weight:900;display:flex;align-items:center;gap:8px}
+.hpbar{background:#000b;padding:4px 10px;border-left:3px solid #5be58a;font-size:.74rem}.hpbar div{width:8rem;height:.4rem;background:#fff2;margin-top:2px}.hpbar i{display:block;height:100%;background:#5be58a;transition:width .2s}
+.aright{position:fixed;top:8px;right:12px;display:flex;gap:6px;align-items:center}
 .abtn-top{width:2.5rem;height:2.5rem;border-radius:50%;background:#000c;border:2px solid #fff6;font-size:1rem;display:grid;place-items:center}
 .abtn-top.on{background:#16a34a;border-color:#86efac}
 .abtn-top.muted{background:#7f1d1d;border-color:#fca5a5}
-.abtn-top.loadout-btn{width:auto;border-radius:1.4rem;padding:0 11px;background:#132b52e6;border:2px solid var(--y);color:var(--y);font-size:.72rem;font-weight:900}
+.abtn-top.fs-btn{background:#0f2447d9;border-color:#7cc4ff;color:#e0f2fe;font-weight:900}
+.abtn-top.loadout-btn{position:fixed;top:8px;left:28rem;width:auto;border-radius:1.4rem;padding:0 12px;background:#132b52e6;border:2px solid var(--y);color:var(--y);font-size:.72rem;font-weight:900}
 .abtn-top.exit{background:#991b1b;border-color:#ff2a55;width:auto;border-radius:1.4rem;padding:0 10px;font-size:.72rem;font-weight:900}
-.loadout-drawer{position:fixed;left:50%;top:76px;transform:translateX(-50%);width:min(92%,38rem);background:#091126f2;border:2px solid var(--y);clip-path:var(--cut);padding:8px 10px;pointer-events:auto;z-index:25;box-shadow:0 8px 28px #000c}
-.ld-hdr{display:flex;justify-content:space-between;align-items:center;font-size:.68rem;font-weight:900;color:var(--y);margin-bottom:6px}
-.ld-close{background:#7f1d1d;color:#fff;padding:2px 8px;border-radius:4px;font-size:.68rem}
-.ld-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr));gap:6px}
-.ld-card{background:#152246;border:1px solid #fff3;padding:6px 8px;text-align:left;clip-path:var(--cut);display:flex;flex-direction:column;gap:2px}
-.ld-card.on{background:#293c74;border:1px solid var(--y);box-shadow:0 0 10px #f5d30055}
-.ld-card b{font-size:.68rem;color:#fff}
-.ld-card small{font-size:.58rem;color:#93c5fd}
-.sq-bhud{position:fixed;top:48px;left:12px;display:flex;flex-direction:column;gap:3px;width:11.5rem;pointer-events:none}
+
+/* CODM-Style Gunsmith Loadout Drawer */
+.codm-gunsmith{position:fixed;left:50%;top:54px;transform:translateX(-50%);width:min(94%,46rem);background:linear-gradient(155deg,#131e36f5,#0a1122f8);border:2px solid var(--y);clip-path:var(--cut);padding:10px 12px;pointer-events:auto;z-index:30;box-shadow:0 12px 36px #000e}
+.gs-top{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #ffffff22;padding-bottom:6px;margin-bottom:8px;flex-wrap:wrap}
+.gs-title{display:flex;align-items:center;gap:6px}
+.gs-badge{background:var(--y);color:#000;font-weight:900;font-size:.62rem;padding:2px 6px;border-radius:2px}
+.gs-title b{font-size:.86rem;color:#fff}
+.gs-title small{font-size:.64rem;color:#7cc4ff}
+.gs-tabs{display:flex;gap:4px;flex-wrap:wrap}
+.gs-wtab{background:#1a2748;color:#cbd5e1;padding:3px 8px;font-size:.62rem;font-weight:700;border:1px solid #ffffff22}
+.gs-wtab.on{background:var(--y);color:#000;border-color:#fff}
+.gs-body{display:grid;grid-template-columns:1.45fr 1fr;gap:10px;align-items:stretch}
+@media (max-width:680px){.gs-body{grid-template-columns:1fr}}
+.gs-left{display:flex;flex-direction:column;gap:6px}
+.gs-att-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr));gap:5px}
+.gs-slot{background:#091022d9;border:1px solid #ffffff2b;border-top:2px solid var(--y);padding:4px 6px;cursor:pointer}
+.gs-slot:hover{background:#18284e}
+.gs-slot span{display:block;font-size:.54rem;color:#94a3b8}
+.gs-slot b{display:block;font-size:.62rem;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gs-preview{position:relative;background:radial-gradient(circle at 50% 50%,#1d315c88,#080e1dc4);border:1px solid #4aa8ff55;border-radius:4px;overflow:hidden}
+#gs-gun-cv{width:100%;height:128px;display:block}
+.gs-blueprint-bar{position:absolute;bottom:4px;left:8px;font-size:.54rem;color:#93c5fd;letter-spacing:.08em}
+.gs-right{background:#091022cc;border:1px solid #ffffff1f;padding:8px;display:flex;flex-direction:column;justify-content:space-between;gap:8px}
+.gs-srow{display:grid;grid-template-columns:4.6rem 1fr 2rem;align-items:center;gap:6px;margin-bottom:5px;font-size:.62rem}
+.gs-srow span{color:#cbd5e1;font-weight:700}
+.gs-bar{height:6px;background:#ffffff1a;border-radius:2px;overflow:hidden}
+.gs-bar i{display:block;height:100%;background:linear-gradient(90deg,#38bdf8,var(--y))}
+.gs-srow b{text-align:right;color:var(--y)}
+.gs-actions{display:flex;gap:6px;justify-content:flex-end}
+
+.ld-close{background:#7f1d1d;color:#fff;padding:3px 9px;border-radius:4px;font-size:.7rem;font-weight:700}
+.sq-bhud{display:flex;flex-direction:column;gap:3px;width:11.5rem;pointer-events:none}
 .sq-bitem{background:#080f24cc;border-left:3px solid #38bdf8;padding:3px 7px;font-size:.64rem;display:flex;justify-content:space-between;align-items:center}
 .sq-bitem.host{border-left-color:var(--y)}
 .sq-bitem .bhp{width:4.2rem;height:.32rem;background:#fff2;margin-top:2px}.sq-bitem .bhp i{display:block;height:100%;background:#38bdf8}
-.pc-keys{position:fixed;left:12px;bottom:14px;background:#070d1ed9;border:1px solid #4aa8ff66;border-left:3px solid var(--y);clip-path:var(--cut);padding:6px 9px;font-size:.62rem;line-height:1.55;color:#dbeafe;pointer-events:none;z-index:5}
-.pc-keys .pk-hdr{color:var(--y);font-weight:900;font-size:.64rem;margin-bottom:2px;letter-spacing:.06em}
+.pc-keys{background:#070d1ed9;border:1px solid #4aa8ff66;border-left:3px solid var(--y);clip-path:var(--cut);padding:6px 9px;font-size:.62rem;line-height:1.55;color:#dbeafe;pointer-events:auto;z-index:5}
+.pc-keys .pk-hdr{display:flex;justify-content:space-between;align-items:center;color:var(--y);font-weight:900;font-size:.64rem;margin-bottom:2px;letter-spacing:.06em}
+.pk-close{background:#7f1d1d;color:#fff;font-size:.58rem;padding:0 5px;border-radius:3px;line-height:1.35}
 .kcap{display:inline-block;background:#1e293b;border:1px solid #94a3b888;border-bottom-width:2px;color:#fff;font-weight:900;font-size:.56rem;padding:0 4px;border-radius:3px;margin-right:3px}
 .slide-fx{position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 55%,rgba(148,197,255,.35) 100%);transition:opacity .12s}
 .xhair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border:2px solid #ff2a55cc;border-radius:50%;pointer-events:none;transition:all .15s}
