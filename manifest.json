@@ -1,18 +1,25 @@
 {
+  "id": "./index.html",
   "name": "Level Up Life: Mission Hub",
   "short_name": "Life Ops",
   "start_url": "./index.html",
   "scope": "./",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "landscape",
-  "background_color": "#0a0e1f",
-  "theme_color": "#0a0e1f",
+  "background_color": "#070b16",
+  "theme_color": "#070b16",
   "icons": [
     {
       "src": "icon-192.svg",
       "sizes": "192x192 512x512",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ]
 }
