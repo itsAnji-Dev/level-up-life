@@ -1,81 +1,59 @@
-/* Level Up Life Ops - Offline Service Worker v6.9 */
-const CACHE = 'lul-pwa-v6.9';
-const SOUNDS = [
-  'https://actions.google.com/sounds/v1/weapons/rifle_fire_select.ogg',
-  'https://actions.google.com/sounds/v1/tools/ejecting_a_cassette.ogg',
-  'https://actions.google.com/sounds/v1/weapons/shell_casings_revolver.ogg',
-  'https://actions.google.com/sounds/v1/weapons/gun_parts_handling.ogg',
-  'https://actions.google.com/sounds/v1/weapons/rifle_charging_handle.ogg',
-  'https://actions.google.com/sounds/v1/weapons/shot_gun_handling.ogg',
-  'https://actions.google.com/sounds/v1/weapons/cocking_a_50cal_gun.ogg',
-  'https://actions.google.com/sounds/v1/weapons/gun_reload.ogg',
-  'https://actions.google.com/sounds/v1/weapons/gun_powder_ignite.ogg',
-  'https://actions.google.com/sounds/v1/weapons/explosion_large.ogg',
-  'https://actions.google.com/sounds/v1/science_fiction/suspense_builder.ogg',
-  'https://actions.google.com/sounds/v1/science_fiction/sci_fi_vortex.ogg',
-  'https://actions.google.com/sounds/v1/crowd/applause.ogg'
-];
-const CORE = [
+const VERSION = 'v3.2-battle-settings';
+const CACHE_NAME = 'level-up-life-ops-' + VERSION;
+
+const CORE_ASSETS = [
   './',
   './index.html',
   './style.css',
+  './app.js',
   './arena3d.js',
-  './mp-voice.js',
-  './manifest.json',
-  './icon-192.svg',
-  './icon-512.svg',
-  'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
-  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
-  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js',
-  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb'
+  './manifest.json'
 ];
 
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(async c => {
-      await Promise.allSettled(CORE.map(u => c.add(new Request(u, { cache: 'reload' }))));
-      await Promise.allSettled(SOUNDS.map(u => c.add(new Request(u, { cache: 'reload' }))));
-    }).then(() => self.skipWaiting())
+self.addEventListener('install', event => {
+  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.allSettled(CORE_ASSETS.map(url => cache.add(url)))
+    )
   );
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
+self.addEventListener('activate', event => {
+  event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim()).then(async () => {
-      const allClients = await self.clients.matchAll({ type: 'window' });
-      allClients.forEach(client => client.postMessage({ type: 'SW_UPDATED', version: CACHE }));
-    })
+      Promise.all(
+        keys
+          .filter(key => key !== CACHE_NAME)
+          .map(key => caches.delete(key))
+      )
+    ).then(() => self.clients.claim()).then(() =>
+      self.clients.matchAll({ type: 'window' }).then(clients => {
+        clients.forEach(client => {
+          client.postMessage({ type: 'SW_UPDATED', version: VERSION });
+        });
+      })
+    )
   );
 });
 
-self.addEventListener('fetch', e => {
-  const u = e.request.url;
-  if (e.request.method !== 'GET') return;
-  if (u.includes('googleapis.com') || u.includes('firebase') || u.includes('worldtimeapi')) return;
+self.addEventListener('fetch', event => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
 
-  const isAppAsset = e.request.mode === 'navigate' || /\.(html|js|css)(\?.*)?$/i.test(u);
-  if (isAppAsset) {
-    e.respondWith(
-      fetch(new Request(e.request, { cache: 'no-store' })).then(r => {
-        if (r && r.ok) {
-          const cp = r.clone();
-          caches.open(CACHE).then(c => c.put(e.request, cp));
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  // Network-first for app shell & JS/CSS so updates apply immediately
+  event.respondWith(
+    fetch(req)
+      .then(res => {
+        if (res && res.status === 200) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
         }
-        return r;
-      }).catch(() => caches.match(e.request))
-    );
-    return;
-  }
-
-  e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(r => {
-      if (r && r.ok) {
-        const cp = r.clone();
-        caches.open(CACHE).then(c => c.put(e.request, cp));
-      }
-      return r;
-    }).catch(() => new Response('', { status: 503 })))
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });
