@@ -1,4 +1,4 @@
-/* ===== 3D SOLDIER BUILDER, PLAYABLE 3D BATTLE ARENA (PC + MOBILE) & CUSTOM HUD ===== */
+/* ===== 3D SOLDIER BUILDER, TWO-HANDED GUN POSE, PLAYABLE 3D ARENA & CUSTOM HUD ===== */
 let AR = null;
 
 function isPCDevice() {
@@ -7,42 +7,140 @@ function isPCDevice() {
   return !isMobileUA && ((navigator.maxTouchPoints || 0) === 0 || fine);
 }
 
+function shortestAngleDiff(from, to) {
+  let d = (to - from) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
 /* ===== SHARED 3D TACTICAL SOLDIER AVATAR (LOBBY + ARENA BOTS + SQUAD) ===== */
 function makeSoldierAvatar(opts = {}) {
   const armorCol = opts.armorCol || 0x2e64b8;
   const tint = opts.tint || null;
   const grp = new THREE.Group();
-  let mix = null, actions = {}, activeAct = null, weaponMount = null, curGunMesh = null;
-  let lims = null;
+  let mix = null, actions = {}, activeAct = null, weaponMount = null, curGunMesh = null, muzzleMesh = null;
+  let lims = null, bones = {}, hasSkeletal = false, aimPitch = 0, firingPulse = 0;
 
   function buildGunMesh(gid) {
     const it = ITEMS[gid] || ITEMS[3];
     const rCol = RAR[it.r] ? RAR[it.r].c : 0x4aa8ff;
+    const isMythic = it.r === 'M' || it.r === 'L';
     const g = new THREE.Group();
-    const dark = new THREE.MeshStandardMaterial({ color: 0x181c26, roughness: 0.4, metalness: 0.7 });
-    const trim = new THREE.MeshStandardMaterial({ color: rCol, roughness: 0.35, metalness: 0.6, emissive: rCol, emissiveIntensity: it.r === 'M' || it.r === 'L' ? 0.35 : 0.1 });
 
-    const len = it.cat === 'sniper' ? 1.05 : it.cat === 'launcher' ? 0.95 : it.cat === 'smg' ? 0.52 : 0.76;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.11, len), dark);
-    body.position.z = len * 0.35;
-    g.add(body);
+    const steel = new THREE.MeshStandardMaterial({ color: 0x1a1f2b, roughness: 0.35, metalness: 0.8 });
+    const polymer = new THREE.MeshStandardMaterial({ color: 0x2b313e, roughness: 0.65, metalness: 0.25 });
+    const woodOrGold = new THREE.MeshStandardMaterial({
+      color: it.id === 7 ? 0xf59e0b : it.id === 5 ? 0x7c2d12 : 0x232936,
+      roughness: it.id === 7 ? 0.25 : 0.6,
+      metalness: it.id === 7 ? 0.85 : 0.3
+    });
+    const trim = new THREE.MeshStandardMaterial({
+      color: rCol,
+      roughness: 0.3,
+      metalness: 0.7,
+      emissive: rCol,
+      emissiveIntensity: isMythic ? 0.55 : 0.15
+    });
 
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.086, 0.03, len * 0.72), trim);
-    stripe.position.set(0, 0.03, len * 0.35);
-    g.add(stripe);
+    const isSniper = it.cat === 'sniper';
+    const isLauncher = it.cat === 'launcher';
+    const isSmg = it.cat === 'smg';
+    const isShotgun = it.cat === 'shotgun';
 
-    if (it.cat === 'sniper' || it.cat === 'ar') {
-      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.22, 8), trim);
-      scope.rotation.x = Math.PI / 2;
-      scope.position.set(0, 0.085, len * 0.28);
-      g.add(scope);
+    // Gun barrel points along +Z in local mount space (aligned forward in soldier hand)
+    const bodyLen = isSniper ? 0.62 : isLauncher ? 0.72 : isSmg ? 0.34 : 0.48;
+    const barrelLen = isSniper ? 0.46 : isLauncher ? 0.32 : isSmg ? 0.16 : 0.28;
+
+    // Buttstock
+    if (!isLauncher) {
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.11, 0.24), woodOrGold);
+      stock.position.set(0, -0.015, -bodyLen * 0.5 - 0.1);
+      g.add(stock);
     }
-    if (it.cat !== 'launcher') {
-      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.18, 0.09), dark);
-      mag.position.set(0, -0.1, len * 0.25);
-      mag.rotation.x = 0.2;
+
+    // Upper & Lower Receiver
+    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.105, bodyLen), isLauncher ? woodOrGold : steel);
+    receiver.position.set(0, 0.01, 0);
+    g.add(receiver);
+
+    // Rarity Neon/Metallic Side Rail Trim
+    const railTop = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, bodyLen * 0.9), trim);
+    railTop.position.set(0, 0.068, 0.02);
+    g.add(railTop);
+
+    const sideStrip = new THREE.Mesh(new THREE.BoxGeometry(0.074, 0.022, bodyLen * 0.75), trim);
+    sideStrip.position.set(0, 0.015, 0.02);
+    g.add(sideStrip);
+
+    // Handguard / Shroud
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.082, bodyLen * 0.55), polymer);
+    guard.position.set(0, 0.01, bodyLen * 0.32);
+    g.add(guard);
+
+    // Pistol Grip
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.13, 0.065), polymer);
+    grip.position.set(0, -0.085, -bodyLen * 0.22);
+    grip.rotation.x = -0.28;
+    g.add(grip);
+
+    // Forward Vertical Foregrip
+    if (!isSmg && !isLauncher) {
+      const fgrip = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.1, 8), polymer);
+      fgrip.position.set(0, -0.075, bodyLen * 0.34);
+      g.add(fgrip);
+    }
+
+    // Magazine (Curved AK/AR style or Drum/Box)
+    if (!isLauncher && !isShotgun) {
+      const magH = isSniper ? 0.12 : isSmg ? 0.2 : 0.22;
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.048, magH, 0.075), isMythic ? trim : steel);
+      mag.position.set(0, -0.11, bodyLen * 0.06);
+      mag.rotation.x = 0.26;
       g.add(mag);
     }
+
+    // Heavy Barrel + Muzzle Brake / Suppressor
+    const barrelRad = isLauncher ? 0.055 : isShotgun ? 0.022 : 0.015;
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(barrelRad, barrelRad, barrelLen, 10), steel);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.022, bodyLen * 0.5 + barrelLen * 0.5);
+    g.add(barrel);
+
+    const muzzleZ = bodyLen * 0.5 + barrelLen;
+    const brake = new THREE.Mesh(new THREE.CylinderGeometry(barrelRad * 1.45, barrelRad * 1.35, 0.07, 10), trim);
+    brake.rotation.x = Math.PI / 2;
+    brake.position.set(0, 0.022, muzzleZ + 0.02);
+    g.add(brake);
+
+    // Tactical Scope / Holographic Sight
+    if (isSniper) {
+      const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.025, 0.28, 12), steel);
+      scopeTube.rotation.x = Math.PI / 2;
+      scopeTube.position.set(0, 0.105, -0.02);
+      g.add(scopeTube);
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.029, 0.029, 0.02, 12), trim);
+      lens.rotation.x = Math.PI / 2;
+      lens.position.set(0, 0.105, 0.12);
+      g.add(lens);
+    } else if (!isLauncher) {
+      const holo = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.048, 0.085), steel);
+      holo.position.set(0, 0.098, -0.04);
+      g.add(holo);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.036, 0.01), trim);
+      glass.position.set(0, 0.1, -0.01);
+      g.add(glass);
+    }
+
+    // Muzzle Flash Burst Mesh (hidden until fired)
+    const flashMat = new THREE.MeshBasicMaterial({ color: isMythic ? rCol : 0xffe066, transparent: true, opacity: 0.92 });
+    const flash = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), flashMat);
+    flash.scale.set(0.8, 0.8, 2.2);
+    flash.position.set(0, 0.022, muzzleZ + 0.16);
+    flash.visible = false;
+    g.add(flash);
+    muzzleMesh = flash;
+
     return g;
   }
 
@@ -53,17 +151,53 @@ function makeSoldierAvatar(opts = {}) {
     weaponMount.add(curGunMesh);
   }
 
-  function setAnim(name) {
-    if (!mix || !actions[name] || activeAct === actions[name]) return;
-    const next = actions[name];
-    if (activeAct) activeAct.fadeOut(0.18);
-    next.reset().fadeIn(0.18).play();
-    activeAct = next;
+  function setAnim(name, speedScale = 1.0) {
+    if (lims) {
+      lims.mode = name;
+      lims.speed = speedScale;
+    }
+    if (!mix) return;
+    const clipAct = actions[name] || actions.Idle || Object.values(actions)[0];
+    if (!clipAct) return;
+    clipAct.timeScale = speedScale;
+    if (activeAct === clipAct) return;
+    if (activeAct) activeAct.fadeOut(0.16);
+    clipAct.reset().fadeIn(0.16).play();
+    activeAct = clipAct;
+  }
+
+  // Apply realistic two-handed rifle grip pose on top of skeletal leg locomotion
+  function applyRifleHoldPose() {
+    if (!hasSkeletal) return;
+    const recoil = firingPulse * 0.08;
+    if (bones.spine) {
+      bones.spine.rotation.y = -0.22;
+      bones.spine.rotation.x = 0.06 - aimPitch * 0.35;
+    }
+    if (bones.rArm) {
+      bones.rArm.rotation.set(0.88 - aimPitch * 0.55 - recoil, 0.12, -0.25);
+    }
+    if (bones.rForeArm) {
+      bones.rForeArm.rotation.set(0.55 + recoil * 0.6, 0.15, 0.85);
+    }
+    if (bones.rHand) {
+      bones.rHand.rotation.set(0.1, -0.2, -0.15);
+    }
+    if (bones.lArm) {
+      bones.lArm.rotation.set(0.95 - aimPitch * 0.55, -0.35, 0.42);
+    }
+    if (bones.lForeArm) {
+      bones.lForeArm.rotation.set(0.75, -0.2, -1.05);
+    }
   }
 
   if (GLTF_CACHE && GLTF_CACHE.soldier && THREE.SkeletonUtils) {
+    hasSkeletal = true;
     const model = THREE.SkeletonUtils.clone(GLTF_CACHE.soldier.scene);
     model.scale.setScalar(1.05);
+    model.updateMatrixWorld(true);
+
+    let rHandBone = null;
     model.traverse(o => {
       if (o.isMesh) {
         o.castShadow = true;
@@ -73,17 +207,31 @@ function makeSoldierAvatar(opts = {}) {
           o.material.emissiveIntensity = 0.14;
         }
       }
-      if (o.isBone && /RightHand/i.test(o.name) && !weaponMount) {
-        weaponMount = new THREE.Group();
-        weaponMount.position.set(0, 0.06, 0.04);
-        weaponMount.rotation.set(Math.PI / 2, 0, 0);
-        weaponMount.scale.setScalar(0.95);
-        o.add(weaponMount);
+      if (o.isBone) {
+        if (/Spine1/i.test(o.name)) bones.spine = o;
+        if (/RightArm$/i.test(o.name)) bones.rArm = o;
+        if (/RightForeArm/i.test(o.name)) bones.rForeArm = o;
+        if (/RightHand$/i.test(o.name)) { bones.rHand = o; rHandBone = o; }
+        if (/LeftArm$/i.test(o.name)) bones.lArm = o;
+        if (/LeftForeArm/i.test(o.name)) bones.lForeArm = o;
       }
     });
-    if (!weaponMount) {
+
+    if (rHandBone) {
+      // Compensate for Mixamo 0.01 Armature bone scale so gun renders at true 1:1 world size
+      const ws = new THREE.Vector3();
+      rHandBone.getWorldScale(ws);
+      const invScale = ws.x > 0.0001 ? (1.0 / ws.x) : 100;
+
       weaponMount = new THREE.Group();
-      weaponMount.position.set(0.24, 1.15, 0.25);
+      weaponMount.scale.setScalar(invScale);
+      weaponMount.position.set(0, 0.08 * invScale, 0.03 * invScale);
+      weaponMount.rotation.set(Math.PI * 0.46, 0.18, -0.15);
+      rHandBone.add(weaponMount);
+    } else {
+      weaponMount = new THREE.Group();
+      weaponMount.position.set(0.22, 1.25, -0.28);
+      weaponMount.rotation.y = Math.PI;
       model.add(weaponMount);
     }
     grp.add(model);
@@ -91,17 +239,20 @@ function makeSoldierAvatar(opts = {}) {
     if (GLTF_CACHE.soldier.animations && GLTF_CACHE.soldier.animations.length) {
       mix = new THREE.AnimationMixer(model);
       GLTF_CACHE.soldier.animations.forEach(clip => {
+        // CRITICAL FIX: Skip TPose clip so it NEVER overwrites Idle!
+        if (/tpose/i.test(clip.name)) return;
         const key = /run/i.test(clip.name) ? 'Run' : /walk/i.test(clip.name) ? 'Walk' : 'Idle';
         actions[key] = mix.clipAction(clip);
       });
-      const startClip = actions.Idle || Object.values(actions)[0];
+      const startClip = actions.Idle || actions.Walk || actions.Run;
       if (startClip) {
         startClip.play();
         activeAct = startClip;
       }
     }
+    applyRifleHoldPose();
   } else {
-    // Articulated 3D Tactical Soldier Fallback
+    // Articulated 3D Tactical Soldier Fallback (Oriented facing -Z to match Soldier.glb)
     const skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a077, roughness: 0.7 });
     const vestMat = new THREE.MeshStandardMaterial({ color: armorCol, roughness: 0.6, metalness: 0.25 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x1b2234, roughness: 0.8 });
@@ -119,27 +270,28 @@ function makeSoldierAvatar(opts = {}) {
     body.add(head);
 
     const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.33), darkMat);
-    helmet.position.set(0, 1.72, -0.01);
+    helmet.position.set(0, 1.72, 0.01);
     body.add(helmet);
 
     const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.05), visorMat);
-    visor.position.set(0, 1.63, 0.14);
+    visor.position.set(0, 1.63, -0.14);
     body.add(visor);
 
-    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.54, 0.15), darkMat);
-    armL.position.set(-0.33, 1.12, 0.08);
-    armL.rotation.x = -0.35;
+    // Two-handed rifle hold arms facing -Z
+    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.48, 0.14), darkMat);
+    armL.position.set(-0.24, 1.2, -0.22);
+    armL.rotation.set(1.05, 0.35, -0.2);
     body.add(armL);
 
-    const armR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.54, 0.15), darkMat);
-    armR.position.set(0.33, 1.14, 0.16);
-    armR.rotation.x = -0.85;
+    const armR = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.48, 0.14), darkMat);
+    armR.position.set(0.24, 1.2, -0.16);
+    armR.rotation.set(1.15, -0.1, 0.1);
     body.add(armR);
 
     weaponMount = new THREE.Group();
-    weaponMount.position.set(0, -0.22, 0.12);
-    weaponMount.rotation.x = 0.85;
-    armR.add(weaponMount);
+    weaponMount.position.set(0.16, 1.24, -0.32);
+    weaponMount.rotation.y = Math.PI;
+    body.add(weaponMount);
 
     const legL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.78, 0.19), darkMat);
     legL.position.set(-0.14, 0.4, 0);
@@ -149,17 +301,19 @@ function makeSoldierAvatar(opts = {}) {
     legR.position.set(0.14, 0.4, 0);
     grp.add(legR);
 
-    lims = { body, legL, legR, mode: 'Idle', t: 0 };
+    lims = { body, legL, legR, mode: 'Idle', speed: 1, t: 0 };
     mix = {
       update(dt) {
-        lims.t += dt * (lims.mode === 'Run' ? 11 : 2.5);
-        if (lims.mode === 'Run') {
-          lims.legL.rotation.x = Math.sin(lims.t) * 0.65;
-          lims.legR.rotation.x = -Math.sin(lims.t) * 0.65;
+        const rate = lims.mode === 'Run' ? 12 * lims.speed : lims.mode === 'Walk' ? 7 * lims.speed : 2.2;
+        lims.t += dt * rate;
+        if (lims.mode === 'Run' || lims.mode === 'Walk') {
+          const amp = lims.mode === 'Run' ? 0.72 : 0.42;
+          lims.legL.rotation.x = Math.sin(lims.t) * amp;
+          lims.legR.rotation.x = -Math.sin(lims.t) * amp;
           lims.body.position.y = Math.abs(Math.cos(lims.t)) * 0.05;
         } else {
-          lims.legL.rotation.x *= 0.85;
-          lims.legR.rotation.x *= 0.85;
+          lims.legL.rotation.x *= 0.82;
+          lims.legR.rotation.x *= 0.82;
           lims.body.position.y = Math.sin(lims.t) * 0.02;
         }
       }
@@ -167,13 +321,24 @@ function makeSoldierAvatar(opts = {}) {
   }
 
   setGun(opts.gunId != null ? opts.gunId : 3);
+
   return {
     grp,
     mix,
     setGun,
-    setAnim: name => {
-      if (lims) lims.mode = name;
-      setAnim(name);
+    setAnim,
+    setAimPitch(p) { aimPitch = p; },
+    triggerMuzzle() {
+      firingPulse = 1.0;
+      if (muzzleMesh) muzzleMesh.visible = true;
+    },
+    update(dt) {
+      if (mix) mix.update(dt);
+      if (firingPulse > 0) {
+        firingPulse = Math.max(0, firingPulse - dt * 14);
+        if (muzzleMesh && firingPulse <= 0.35) muzzleMesh.visible = false;
+      }
+      applyRifleHoldPose();
     },
     weaponMount
   };
@@ -248,7 +413,7 @@ function startMatch(squadId = null) {
       </div>
 
       <div class="sq-bhud" id="ar-sqhud" style="top:${isPC ? '138px' : '142px'}"></div>
-      <div class="mfeed" id="ar-feed">${isPC ? '🎯 AIM LOCKED — [WASD] Move · [SPACE] Jump · [LMB] Fire · [RMB] Scope · [ESC] Cursor' : 'MAP: ' + esc(mapCfg.name) + ' · ELIMINATE HOSTILES'}</div>
+      <div class="mfeed" id="ar-feed">${isPC ? '🎯 AIM LOCKED — [W/A/S/D] Move · [SPACE] Jump · [LMB] Fire · [RMB] Scope · [ESC] Cursor' : 'MAP: ' + esc(mapCfg.name) + ' · ELIMINATE HOSTILES'}</div>
 
       <div class="hctrl" style="${hStyle('minimap')}"><canvas id="radar" width="84" height="84"></canvas></div>
       <div class="hctrl joy" id="hc-joy" style="${hStyle('joy')}"><div class="knob" id="hc-knob"></div></div>
@@ -364,7 +529,7 @@ function startMatch(squadId = null) {
 
   // Player State
   let px = 0, py = 0, pz = 28, vy = 0;
-  let yaw = 0, pitch = 0.05;
+  let yaw = 0, pitch = 0.05, charYaw = 0, curAnimState = 'Idle';
   let hp = 100, maxHp = 100, kills = 0;
   let scoped = false, fpp = false, reloading = false, lastShotTs = 0;
   let pcAimMode = false, pcFiring = false, touchFiring = false;
@@ -388,10 +553,11 @@ function startMatch(squadId = null) {
     tracers.push({ line, life: 0.08 });
   }
 
-  // 6 AI Enemy 3D Soldier Bots
+  // 6 AI Enemy 3D Soldier Bots (each equipped with real 3D rifle + running/aiming animations)
   const botSpawns = [[-32, -32], [0, -34], [32, -32], [-34, 4], [34, -4], [0, -22]];
   const bots = botSpawns.map((sp, i) => {
-    const av = makeSoldierAvatar({ armorCol: 0xb91c1c, gunId: i % 2 === 0 ? 5 : 3, tint: 0xff2a55 });
+    const gunId = i % 3 === 0 ? 7 : i % 2 === 0 ? 5 : 3;
+    const av = makeSoldierAvatar({ armorCol: 0xb91c1c, gunId, tint: 0xff2a55 });
     av.grp.position.set(sp[0], 0, sp[1]);
     scene.add(av.grp);
     return {
@@ -400,6 +566,7 @@ function startMatch(squadId = null) {
       x: sp[0],
       y: 0,
       z: sp[1],
+      rotY: 0,
       hp: 100,
       alive: true,
       respawnT: 0,
@@ -499,6 +666,7 @@ function startMatch(squadId = null) {
     lastShotTs = nowMs;
     st.ammo--;
     SFX.shot();
+    playerAv.triggerMuzzle();
     updateHud();
 
     // Crosshair punch feedback
@@ -519,7 +687,6 @@ function startMatch(squadId = null) {
       )).normalize();
 
       let maxDist = 75;
-      // Check wall intersection
       for (const c of colliders) {
         const cx = (c.minX + c.maxX) * 0.5, cz = (c.minZ + c.maxZ) * 0.5;
         const toBox = new THREE.Vector3(cx - origin.x, 0, cz - origin.z);
@@ -532,7 +699,6 @@ function startMatch(squadId = null) {
         }
       }
 
-      // Check Bot Hits
       let hitBot = null, bestD = maxDist;
       for (const b of bots) {
         if (!b.alive) continue;
@@ -549,7 +715,7 @@ function startMatch(squadId = null) {
       }
 
       const endPt = origin.clone().addScaledVector(dir, bestD);
-      spawnTracer(origin.clone().addScaledVector(dir, 0.6), endPt, w.rarity === 'M' ? 0xff2a55 : 0xfef08a);
+      spawnTracer(origin.clone().addScaledVector(dir, 0.65), endPt, w.rarity === 'M' ? 0xff2a55 : 0xfef08a);
 
       if (hitBot) {
         if (w.explosive) {
@@ -585,20 +751,10 @@ function startMatch(squadId = null) {
   function enterPcAimMode() {
     if (!isPC || !AR || AR.paused) return;
     pcAimMode = true;
-    setFeed('🎯 360° AIM MODE — [LMB] Fire · [RMB] Scope · [SPACE] Jump · [ESC] Cursor Mode');
+    setFeed('🎯 360° AIM MODE — [W/A/S/D] Run · [SPACE] Jump · [LMB] Fire · [RMB] Scope · [ESC] Cursor');
     try {
       const p = acv.requestPointerLock && acv.requestPointerLock();
       if (p && p.catch) p.catch(() => {});
-    } catch (e) {}
-  }
-
-  function exitPcAimMode() {
-    pcAimMode = false;
-    pcFiring = false;
-    if (scoped) toggleScope(false);
-    setFeed('🖱️ CURSOR MODE — Left-click UI normally · Press [ESC] or click arena to Aim');
-    try {
-      if (document.pointerLockElement) document.exitPointerLock();
     } catch (e) {}
   }
 
@@ -607,7 +763,7 @@ function startMatch(squadId = null) {
     const locked = document.pointerLockElement === acv;
     if (locked) {
       pcAimMode = true;
-      setFeed('🎯 360° AIM MODE — [LMB] Fire · [RMB] Scope · [SPACE] Jump · [ESC] Cursor Mode');
+      setFeed('🎯 360° AIM MODE — [W/A/S/D] Run · [SPACE] Jump · [LMB] Fire · [RMB] Scope · [ESC] Cursor');
     } else {
       pcAimMode = false;
       pcFiring = false;
@@ -629,7 +785,6 @@ function startMatch(squadId = null) {
     if (!isPC || !AR || AR.paused) return;
     if (e.target.closest('button, .modal, .atop')) return;
 
-    // If pointer is not locked yet, clicking the 3D arena locks into 360° Aim Mode
     if (document.pointerLockElement !== acv) {
       if (e.target === acv) {
         enterPcAimMode();
@@ -638,7 +793,6 @@ function startMatch(squadId = null) {
       return;
     }
 
-    // In 360° Aim Rotation Mode: Left Click = Fire, Right Click = Scope/ADS
     if (e.button === 0) {
       pcFiring = true;
       fireWeapon();
@@ -656,8 +810,6 @@ function startMatch(squadId = null) {
     if (!isPC || !AR) return;
     if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
 
-    // ESC toggles back to 360° Aim Rotation Mode when in Cursor Mode
-    // (When in Aim Mode, browser natively exits pointerLock on ESC and triggers onPointerLockChange)
     if (e.key === 'Escape') {
       e.preventDefault();
       const openModal = document.querySelector('.modal');
@@ -702,11 +854,10 @@ function startMatch(squadId = null) {
     window.addEventListener('mouseup', onPcMouseUp);
     window.addEventListener('keydown', onPcKeyDown);
     window.addEventListener('keyup', onPcKeyUp);
-    // Enter 360° Aim Mode immediately from the user's Start button click
     enterPcAimMode();
   }
 
-  /* ===== MOBILE TOUCH CONTROLS (UNCHANGED FOR MOBILE DEVICES) ===== */
+  /* ===== MOBILE TOUCH CONTROLS (LINKED TO DIRECTIONAL CHARACTER ROTATION & ANIMATION) ===== */
   if (!isPC) {
     const joyEl = document.getElementById('hc-joy');
     const knobEl = document.getElementById('hc-knob');
@@ -825,12 +976,20 @@ function startMatch(squadId = null) {
       if (!rp) {
         const av = makeSoldierAvatar({ armorCol: 0x38bdf8, gunId: m.battle.gunId || 3, tint: 0x4ade80 });
         scene.add(av.grp);
-        rp = remotePeers[m.pid] = { av, tx: m.battle.x || 0, ty: m.battle.y || 0, tz: m.battle.z || 26, try: m.battle.ry || 0 };
+        rp = remotePeers[m.pid] = {
+          av,
+          tx: m.battle.x || 0,
+          ty: m.battle.y || 0,
+          tz: m.battle.z || 26,
+          try: m.battle.ry || 0,
+          anim: m.battle.anim || 'Idle'
+        };
       }
       rp.tx = m.battle.x || 0;
       rp.ty = m.battle.y || 0;
       rp.tz = m.battle.z || 26;
       rp.try = m.battle.ry || 0;
+      rp.anim = m.battle.anim || 'Idle';
       if (m.battle.gunId != null) rp.av.setGun(m.battle.gunId);
     });
 
@@ -851,7 +1010,6 @@ function startMatch(squadId = null) {
     radarCtx.arc(cx, cy, 40, 0, Math.PI * 2);
     radarCtx.fill();
 
-    // Sight cone
     radarCtx.fillStyle = 'rgba(74, 168, 255, 0.22)';
     radarCtx.beginPath();
     radarCtx.moveTo(cx, cy);
@@ -867,7 +1025,6 @@ function startMatch(squadId = null) {
       return { x: cx + Math.max(-35, Math.min(35, rx)), y: cy + Math.max(-35, Math.min(35, rz)) };
     };
 
-    // Enemies (Red)
     radarCtx.fillStyle = '#ff2a55';
     bots.forEach(b => {
       if (!b.alive) return;
@@ -877,7 +1034,6 @@ function startMatch(squadId = null) {
       radarCtx.fill();
     });
 
-    // Squad Teammates (Green)
     radarCtx.fillStyle = '#4ade80';
     Object.values(remotePeers).forEach(rp => {
       const pt = toRadar(rp.av.grp.position.x, rp.av.grp.position.z);
@@ -886,7 +1042,6 @@ function startMatch(squadId = null) {
       radarCtx.fill();
     });
 
-    // Self (Gold center)
     radarCtx.fillStyle = '#f5d300';
     radarCtx.beginPath();
     radarCtx.arc(cx, cy, 3.5, 0, Math.PI * 2);
@@ -902,7 +1057,7 @@ function startMatch(squadId = null) {
     prevT = nowT;
     if (AR.paused) return;
 
-    // Movement Input (PC Keyboard OR Mobile Joystick)
+    // Movement Input (PC WASD / Arrows OR Mobile Touch Joystick)
     let moveF = 0, moveR = 0, sprint = 1;
     if (isPC) {
       if (keysDown.KeyW || keysDown.ArrowUp) moveF += 1;
@@ -915,10 +1070,11 @@ function startMatch(squadId = null) {
       moveR = joyX;
     }
 
-    const mag = Math.hypot(moveF, moveR);
-    if (mag > 1) { moveF /= mag; moveR /= mag; }
+    const rawMag = Math.hypot(moveF, moveR);
+    const mag = Math.min(1, rawMag);
+    if (rawMag > 1) { moveF /= rawMag; moveR /= rawMag; }
 
-    const speed = (scoped ? 4.2 : 7.8) * sprint;
+    const speed = (scoped ? 4.4 : 8.0) * sprint;
     const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
     const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
     const stepX = (fwdX * moveF + rightX * moveR) * speed * dt;
@@ -936,14 +1092,40 @@ function startMatch(squadId = null) {
       vy = 0;
     }
 
-    // Update Local Soldier Avatar
+    const isFiringNow = (isPC && pcAimMode && pcFiring) || (!isPC && touchFiring);
+
+    // Directional Character Rotation & Locomotion Animation (PC WASD + Mobile Joystick)
+    // Soldier.glb natively faces -Z at rotation.y = 0, so yaw + atan2(-moveR, moveF) faces movement direction!
+    let targetCharYaw = yaw;
+    if (mag > 0.08) {
+      if (isFiringNow || scoped) {
+        // Combat aim-strafe mode: keep upper torso/gun aimed toward crosshair while strafing/backpedaling
+        targetCharYaw = yaw + Math.atan2(-moveR * 0.45, Math.abs(moveF) + 0.55);
+      } else {
+        // Free directional run: W = front, S = back, A = left, D = right, Joystick = full 360° turn
+        targetCharYaw = yaw + Math.atan2(-moveR, moveF);
+      }
+    }
+    charYaw += shortestAngleDiff(charYaw, targetCharYaw) * Math.min(1, dt * 16);
+
+    if (mag > 0.55) {
+      curAnimState = 'Run';
+      playerAv.setAnim('Run', Math.max(0.85, mag * sprint));
+    } else if (mag > 0.08) {
+      curAnimState = 'Walk';
+      playerAv.setAnim('Walk', Math.max(0.8, mag * 1.4));
+    } else {
+      curAnimState = 'Idle';
+      playerAv.setAnim('Idle', 1.0);
+    }
+
     playerAv.grp.position.set(px, py, pz);
-    playerAv.grp.rotation.y = yaw + Math.PI;
-    playerAv.setAnim(mag > 0.1 ? 'Run' : 'Idle');
-    if (playerAv.mix) playerAv.mix.update(dt);
+    playerAv.grp.rotation.y = charYaw;
+    playerAv.setAimPitch(pitch);
+    playerAv.update(dt);
 
     // Continuous Fire when holding Left Click (PC Aim Mode) or Touch Fire Button
-    if ((isPC && pcAimMode && pcFiring) || (!isPC && touchFiring)) {
+    if (isFiringNow) {
       fireWeapon();
     }
 
@@ -961,7 +1143,7 @@ function startMatch(squadId = null) {
       );
       camera.lookAt(lookTarget);
     } else {
-      const camDist = 3.4;
+      const camDist = 3.5;
       const shoulderX = Math.cos(yaw) * 0.62;
       const shoulderZ = -Math.sin(yaw) * 0.62;
       const cx = px + Math.sin(yaw) * camDist + shoulderX;
@@ -1033,7 +1215,7 @@ function startMatch(squadId = null) {
       }
     }
 
-    // Update Enemy Bots AI
+    // Update Enemy Bots AI (Forward-facing -Z alignment, smooth rotation, Run/Walk animations & 3D rifle fire)
     bots.forEach(b => {
       if (!b.alive) {
         b.respawnT -= dt;
@@ -1053,13 +1235,16 @@ function startMatch(squadId = null) {
       const dist = Math.hypot(dx, dz);
       b.strafeT -= dt;
       if (b.strafeT <= 0) {
-        b.strafeT = 1.5 + Math.random() * 2;
-        b.dir = Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.4;
+        b.strafeT = 1.4 + Math.random() * 2;
+        b.dir = Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.3;
       }
 
-      const moveSpd = dist > 14 ? 3.2 : 1.8;
-      const nx = Math.max(-44, Math.min(44, b.x + Math.sin(b.dir) * moveSpd * dt));
-      const nz = Math.max(-44, Math.min(44, b.z + Math.cos(b.dir) * moveSpd * dt));
+      const chasing = dist > 12;
+      const moveSpd = chasing ? 3.5 : 1.7;
+      const vx = Math.sin(b.dir) * moveSpd;
+      const vz = Math.cos(b.dir) * moveSpd;
+      const nx = Math.max(-44, Math.min(44, b.x + vx * dt));
+      const nz = Math.max(-44, Math.min(44, b.z + vz * dt));
       let blocked = false;
       for (const c of colliders) {
         if (nx + 0.55 > c.minX && nx - 0.55 < c.maxX && nz + 0.55 > c.minZ && nz - 0.55 < c.maxZ) {
@@ -1074,16 +1259,23 @@ function startMatch(squadId = null) {
         b.dir += Math.PI * 0.65;
       }
 
-      b.av.grp.position.set(b.x, 0, b.z);
-      b.av.grp.rotation.y = Math.atan2(dx, dz);
-      b.av.setAnim('Run');
-      if (b.av.mix) b.av.mix.update(dt);
+      // Face player when engaging close, or face movement direction when sprinting
+      const faceX = chasing ? vx : dx;
+      const faceZ = chasing ? vz : dz;
+      const targetBotRot = Math.atan2(-faceX, -faceZ);
+      b.rotY += shortestAngleDiff(b.rotY, targetBotRot) * Math.min(1, dt * 10);
 
-      // Bot Shoots at Player
+      b.av.grp.position.set(b.x, 0, b.z);
+      b.av.grp.rotation.y = b.rotY;
+      b.av.setAnim(chasing ? 'Run' : 'Walk', chasing ? 1.0 : 0.85);
+      b.av.update(dt);
+
+      // Bot Shoots at Player with Muzzle Flash
       b.fireCd -= dt;
       if (b.fireCd <= 0 && dist < 38) {
         b.fireCd = 1.4 + Math.random() * 1.3;
-        const from = new THREE.Vector3(b.x, 1.4, b.z);
+        b.av.triggerMuzzle();
+        const from = new THREE.Vector3(b.x, 1.42, b.z);
         const to = new THREE.Vector3(px + (Math.random() - 0.5) * 1.6, py + 1.2, pz + (Math.random() - 0.5) * 1.6);
         spawnTracer(from, to, 0xff2a55);
         if (Math.random() < 0.32) {
@@ -1100,13 +1292,15 @@ function startMatch(squadId = null) {
       }
     });
 
-    // Smoothly interpolate Remote Teammates
+    // Smoothly interpolate Remote Teammates & animate their legs/guns
     Object.values(remotePeers).forEach(rp => {
-      rp.av.grp.position.x += (rp.tx - rp.av.grp.position.x) * 0.2;
-      rp.av.grp.position.y += (rp.ty - rp.av.grp.position.y) * 0.2;
-      rp.av.grp.position.z += (rp.tz - rp.av.grp.position.z) * 0.2;
-      rp.av.grp.rotation.y = rp.try + Math.PI;
-      if (rp.av.mix) rp.av.mix.update(dt);
+      const stepD = Math.hypot(rp.tx - rp.av.grp.position.x, rp.tz - rp.av.grp.position.z);
+      rp.av.grp.position.x += (rp.tx - rp.av.grp.position.x) * 0.22;
+      rp.av.grp.position.y += (rp.ty - rp.av.grp.position.y) * 0.22;
+      rp.av.grp.position.z += (rp.tz - rp.av.grp.position.z) * 0.22;
+      rp.av.grp.rotation.y += shortestAngleDiff(rp.av.grp.rotation.y, rp.try) * 0.25;
+      rp.av.setAnim(stepD > 0.04 ? 'Run' : (rp.anim || 'Idle'));
+      rp.av.update(dt);
     });
 
     // Sync Squad Packet every 350ms
@@ -1128,7 +1322,8 @@ function startMatch(squadId = null) {
         x: +px.toFixed(2),
         y: +py.toFixed(2),
         z: +pz.toFixed(2),
-        ry: +yaw.toFixed(3),
+        ry: +charYaw.toFixed(3),
+        anim: curAnimState,
         hp: Math.ceil(hp),
         gunId: weapons[wIdx].id,
         kills,
