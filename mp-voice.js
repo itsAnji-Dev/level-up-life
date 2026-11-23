@@ -1,6 +1,38 @@
 /* ===== 5-MEMBER SQUAD ROOM, LIVE BATTLE SYNC & WEBRTC MIC/SPEAKER VOICE CHAT ===== */
 let INBOX=[],OUTBOX=[],SQUAD_ID=null,SQUAD_DOCS={},SQUAD_META=null,MY_READY=1;
-let unsubOutbox=null,unsubSquad=null,handledIds={},battleSyncBusy=0;
+let unsubOutbox=null,unsubSquad=null,handledIds={},battleSyncBusy=0,_lastUiSig='',_rafRender=0;
+
+function uiVisualSig(){
+  const sq=squadMembers().map(m=>m.pid+':'+m.name+':'+m.lvl+':'+m.ready+':'+m.isHost+':'+(m.speaking?1:0)).join('|');
+  const fr=(S.friends||[]).map(f=>f.i+':'+f.n+':'+f.l).join('|');
+  return [SQUAD_ID||'',sq,INBOX.length,fr,S.map,S.mode,VOICE.micOn?1:0,VOICE.spkOn?1:0].join('~');
+}
+
+function safeRender(force=false){
+  if(AR||busy||inLogin)return;
+  const sig=uiVisualSig();
+  if(!force&&sig===_lastUiSig)return;
+  _lastUiSig=sig;
+
+  const ae=document.activeElement;
+  if(ae&&ae.closest('#ui')&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName)){
+    if(!ae.dataset.deferRender){
+      ae.dataset.deferRender='1';
+      ae.addEventListener('blur',()=>{delete ae.dataset.deferRender;safeRender(true)},{once:true});
+    }
+    return;
+  }
+
+  if(_rafRender)cancelAnimationFrame(_rafRender);
+  _rafRender=requestAnimationFrame(()=>{
+    _rafRender=0;
+    if(pg===''&&typeof patchHomeSquad==='function'&&document.getElementById('sq-dock-wrap')){
+      patchHomeSquad();
+    }else{
+      render();
+    }
+  });
+}
 
 function isSquadHost(){
   if(!SQUAD_ID)return true;
@@ -22,7 +54,6 @@ function squadMembers(){
   const list=[me];
   Object.values(SQUAD_DOCS).forEach(d=>{
     if(!d||d.pid===S.id)return;
-    /* Filter out stale/disconnected peers (>15s in lobby, >5.5s in battle) */
     const age=Date.now()-(d.squadPing||0);
     if(age>15000)return;
     const isH=SQUAD_META?SQUAD_META.hostPid===d.pid:(SQUAD_ID==='SQ_'+d.pid);
@@ -36,7 +67,6 @@ function squadMembers(){
     });
   });
 
-  /* Sort: Host first, then local player, then alphabetically, capped at 5 members */
   return list.sort((a,b)=>(b.isHost-a.isHost)||(b.me-a.me)||a.name.localeCompare(b.name)).slice(0,5);
 }
 
@@ -97,7 +127,7 @@ function listenMultiplayer(){
       });
     });
     INBOX=nextInbox;
-    if(!AR)render();
+    safeRender();
   },err=>console.warn('Inbox listener:',err));
 }
 
@@ -116,7 +146,6 @@ function listenSquadRoom(){
     });
     SQUAD_DOCS=nextDocs;
 
-    /* Check if Host disbanded squad or kicked this player */
     if(!isSquadHost()){
       if(hostDoc&&hostDoc.squadMeta){
         SQUAD_META=hostDoc.squadMeta;
@@ -124,10 +153,8 @@ function listenSquadRoom(){
           toast('🚪 You were removed from the squad by the Host.');
           leaveSquad(true);return;
         }
-        /* Sync Host's chosen Map & Mode */
         if(SQUAD_META.map&&S.map!==SQUAD_META.map){S.map=SQUAD_META.map}
         if(SQUAD_META.mode&&S.mode!==SQUAD_META.mode){S.mode=SQUAD_META.mode}
-        /* Auto-deploy into 3D Battle World when Host presses START */
         if(SQUAD_META.status==='started'&&!AR&&!handledIds['start_'+SQUAD_META.startTs]){
           handledIds['start_'+SQUAD_META.startTs]=1;
           startMatch(SQUAD_ID);
@@ -138,18 +165,19 @@ function listenSquadRoom(){
       }
     }
 
-    /* Process incoming WebRTC voice signals & update battle teammates */
     VOICE.syncPeers(Object.values(nextDocs));
     if(AR)AR.syncTeammates(squadMembers());
     updateLobbySquad();
-    if(!AR&&(pg===''||pg==='clan'))render();
+    if(!AR&&(pg===''||pg==='clan'))safeRender();
   },err=>console.warn('Squad listener:',err));
 }
 
 async function sendFriendReqById(targetPid){
-  const pid=(targetPid||document.getElementById('fid')?.value||'').trim().toUpperCase();
+  const inp=document.getElementById('fid');
+  const pid=(targetPid||inp?.value||'').trim().toUpperCase();
   if(!DB||!USER)return toast('Sign in with Google on all devices first!');
   if(!pid||pid===S.id)return toast('Enter your friend\'s Player ID');
+  if(inp)inp.blur();
   try{
     const q=await DB.collection('players').where('pid','==',pid).limit(1).get();
     if(q.empty)return toast('No player found with ID '+esc(pid)+'. Make sure your friend signed in with Google!');
@@ -163,6 +191,7 @@ async function sendFriendReqById(targetPid){
       payload:{lvl:S.lvl,owned:Object.keys(S.owned).length,streak:S.streak,eq:S.eq},
       ts:Date.now()
     });
+    if(inp)inp.value='';
     await pushMyPlayerDoc();
     SFX.coin();toast('✅ Friend Request sent to '+esc(x.n)+' ('+x.pid+')!');
   }catch(e){toast('Could not send invite: '+esc(e.message))}
@@ -191,9 +220,9 @@ async function acceptInvite(msgId){
   }else if(inv.type==='match_invite'){
     await joinSquadWithFriend(inv.fromPid,inv.fromName,inv.payload?.map||S.map);
   }
-  render();
+  safeRender(true);
 }
-function declineInvite(msgId){handledIds[msgId]=1;INBOX=INBOX.filter(i=>i.id!==msgId);render()}
+function declineInvite(msgId){handledIds[msgId]=1;INBOX=INBOX.filter(i=>i.id!==msgId);safeRender(true)}
 
 async function sendGift(toPid,toName,kind){
   if(!DB||!USER)return toast('Sign in with Google first');
@@ -203,7 +232,7 @@ async function sendGift(toPid,toName,kind){
   if(S[costCur]<cost)return toast('Not enough '+costCur.toUpperCase()+' to send this gift');
   S[costCur]-=cost;save();
   OUTBOX.push({id:'GFT_'+Date.now(),type:'gift',fromUid:USER.uid,fromPid:S.id,fromName:S.name,fromAvatar:'🎁',toPid,payload,ts:Date.now()});
-  await pushMyPlayerDoc();render();
+  await pushMyPlayerDoc();safeRender(true);
   SFX.coin();toast('🎁 Sent '+payload.label+' to '+esc(toName)+'!');
 }
 
@@ -222,7 +251,7 @@ async function inviteFriendToPlay(toPid,toName){
     toPid,payload:{squadId:SQUAD_ID,map:S.map,mapName:activeMap().name},ts:Date.now()
   });
   await pushMyPlayerDoc();
-  updateLobbySquad();render();
+  updateLobbySquad();safeRender(true);
   toast('🎮 Squad Invite sent to '+esc(toName)+'! ('+squadMembers().length+'/5 in lobby)');
 }
 
@@ -241,7 +270,7 @@ async function toggleReady(){
   MY_READY=MY_READY?0:1;
   SFX.click();
   await pushMyPlayerDoc();
-  render();
+  safeRender(true);
 }
 
 async function kickSquadMember(pid){
@@ -257,7 +286,7 @@ async function leaveSquad(silent=false){
   VOICE.closeAll();
   await pushMyPlayerDoc({squadId:null,squadMeta:null,battle:null});
   updateLobbySquad();
-  if(!silent){toast('🚪 Left Squad Lobby');render()}
+  if(!silent){toast('🚪 Left Squad Lobby');safeRender(true)}
 }
 
 async function launchSquadMatch(){
@@ -305,7 +334,6 @@ async function markExitedBattle(){
   }catch(e){}
 }
 
-/* Heartbeat every 4s while in Squad Lobby so offline members auto-clear */
 setInterval(()=>{if(SQUAD_ID&&DB&&USER&&!AR)pushMyPlayerDoc()},4000);
 window.addEventListener('beforeunload',()=>{
   if(DB&&USER&&SQUAD_ID){
@@ -341,7 +369,7 @@ const VOICE=(()=>{
         if(nowSpk!==speaking){
           speaking=nowSpk;
           if(SQUAD_ID&&DB&&USER)pushMyPlayerDoc();
-          if(!AR&&pg==='')render();
+          safeRender();
         }
       },250);
     }catch(e){}
@@ -372,7 +400,7 @@ const VOICE=(()=>{
     }
     updBtns();
     if(SQUAD_ID)pushMyPlayerDoc();
-    if(!AR)render();
+    safeRender(true);
   }
 
   function toggleSpk(){
@@ -380,7 +408,7 @@ const VOICE=(()=>{
     Object.values(audios).forEach(a=>{a.muted=!spkOn});
     updBtns();
     toast(spkOn?'🔊 Squad Speaker ON':'🔈 Squad Speaker Muted');
-    if(!AR)render();
+    safeRender(true);
   }
 
   function pushSig(toPid,kind,data){
@@ -431,7 +459,6 @@ const VOICE=(()=>{
       if(!d||d.pid===S.id)return;
       if(Date.now()-(d.squadPing||0)>15000)return;
       activePids.add(d.pid);
-      /* Deterministic initiator: lower Player ID creates the WebRTC offer */
       const initiator=S.id<d.pid;
       const pc=ensurePeer(d.pid,initiator);
 
