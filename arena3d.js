@@ -1,5 +1,6 @@
 /* ===== 3D SOLDIER, FPP VIEWMODEL, CODM SLIDE, DEATH FALL, BALLISTIC BULLETS, GUN AUDIO, GUNSMITH & CROSS-DEVICE PRIVATE MULTIPLAYER ===== */
 let AR = null;
+let lobbyBridgeActive = false;
 
 /* ===== UNIFIED MAP REGISTRY (AVAILABLE ON BOTH PC & MOBILE) ===== */
 const ALL_BATTLE_MAPS = [
@@ -137,7 +138,7 @@ function broadcastRoomEvent(payload) {
 (function setupSwAutoSync() {
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.addEventListener('message', ev => {
-    if (ev && ev.data && ev.data.type === 'SW_UPDATED' && (!AR || AR.isLobby) && !window.__lulSwReloaded) {
+    if (ev && ev.data && ev.data.type === 'SW_UPDATED' && !AR && !window.__lulSwReloaded) {
       window.__lulSwReloaded = true;
       if (typeof toast === 'function') toast('🔄 Updated to ' + ev.data.version + ' — refreshing...');
       setTimeout(() => window.location.reload(), 250);
@@ -663,7 +664,7 @@ function createFppViewmodel() {
 
   const lArm = new THREE.Group();
   const lForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.043, 0.38, 10), sleeveMat);
-  lForearm.rotation.set(Math.PI * 0.38, -0.35, -0.22);
+  lForearm.rotation.x = Math.PI * 0.38, -0.35, -0.22;
   lForearm.position.set(-0.13, -0.13, -0.04);
   lArm.add(lForearm);
   const lWrist = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.034, 0.07, 10), skinMat);
@@ -1287,7 +1288,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     });
   }
 
-  // Ensure activeMap() ALWAYS returns the host-synced map on both PC and Mobile
   if (typeof window.activeMap === 'function' && !window.__origActiveMap) {
     window.__origActiveMap = window.activeMap;
     window.activeMap = function () {
@@ -1387,7 +1387,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       renderPrivateSlideBody();
     }
 
-    if (hostStarted && PRIVATE_ROOM.screenOpen && !AR_LOADING && (!AR || AR.isLobby)) {
+    if (hostStarted && PRIVATE_ROOM.screenOpen && !AR_LOADING && !AR) {
       PRIVATE_ROOM.active = true;
       PRIVATE_ROOM.started = true;
       closePrivateSlide(true);
@@ -1455,52 +1455,39 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     });
   }
 
-  // Keeps AR active as a lightweight lobby packet carrier while in Home Lobby OR Private Room
-  // so host map changes and private room states sync across PC & Mobile in real time!
+  // Does NOT overwrite global `AR` while in lobby so `!AR` remains accurate for auto-deploy
   function ensureLobbyNetworkBridge() {
-    if (AR && !AR.isLobby) return;
-    AR = {
-      isLobby: true,
-      paused: 0,
-      getPacket() {
-        const me = getCurrentUserProfile();
-        const curMap = getMapById(PRIVATE_ROOM.mapId || (typeof S !== 'undefined' && S && S.map) || 'killhouse_1v1');
-        return {
-          inMatch: false,
-          privLobby: PRIVATE_ROOM.screenOpen || PRIVATE_ROOM.active,
-          roomId: PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' ? SQUAD_ID : ''),
-          mode: PRIVATE_ROOM.mode,
-          mapId: curMap.id,
-          mapName: PRIVATE_ROOM.mapName || curMap.name,
-          fillBots: PRIVATE_ROOM.fillBots,
-          team: PRIVATE_ROOM.myTeam,
-          ready: PRIVATE_ROOM.myReady,
-          started: PRIVATE_ROOM.started,
-          gunId: me.gunId,
-          lvl: me.lvl,
-          ts: Date.now()
-        };
-      },
-      syncTeammates(members) {
-        ingestSquadMembers(members);
-      },
-      cleanup() {},
-      stats: () => ({ kills: 0, mapName: PRIVATE_ROOM.mapName })
-    };
-  }
-
-  function disableLobbyNetworkBridge() {
-    if (AR && AR.isLobby) {
-      AR = null;
-    }
+    if (AR) return;
+    lobbyBridgeActive = true;
   }
 
   function pushLobbySync() {
-    if (!AR || AR.isLobby) ensureLobbyNetworkBridge();
+    if (AR) return;
+    ensureLobbyNetworkBridge();
     publishRoomSnapshot();
     syncInvitesFromStorage();
-    if (typeof syncBattleState === 'function' && (PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' && SQUAD_ID))) {
-      try { syncBattleState(); } catch (e) {}
+    if (typeof pushMyPlayerDoc === 'function' && (PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' && SQUAD_ID))) {
+      const me = getCurrentUserProfile();
+      const curMap = getMapById(PRIVATE_ROOM.mapId || (typeof S !== 'undefined' && S && S.map) || 'killhouse_1v1');
+      try {
+        pushMyPlayerDoc({
+          battle: {
+            inMatch: false,
+            privLobby: PRIVATE_ROOM.screenOpen || PRIVATE_ROOM.active,
+            roomId: PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' ? SQUAD_ID : ''),
+            mode: PRIVATE_ROOM.mode,
+            mapId: curMap.id,
+            mapName: PRIVATE_ROOM.mapName || curMap.name,
+            fillBots: PRIVATE_ROOM.fillBots,
+            team: PRIVATE_ROOM.myTeam,
+            ready: PRIVATE_ROOM.myReady,
+            started: PRIVATE_ROOM.started,
+            gunId: me.gunId,
+            lvl: me.lvl,
+            ts: Date.now()
+          }
+        });
+      } catch (e) {}
     }
   }
 
@@ -1531,7 +1518,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         gunId: b.gunId != null ? b.gunId : 3
       };
 
-      // Sync Host's Map Selection across BOTH Home Lobby and Private Room on PC & Mobile
       if (!m.me && isHostMember) {
         if (b.mapId) {
           setSyncedMapSelection(b.mapId, b.mapName);
@@ -1548,8 +1534,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       renderPrivateSlideBody();
     }
 
-    // Auto-deploy friend into the exact same 3D map when Host starts the match
-    if (hostStarted && PRIVATE_ROOM.screenOpen && !AR_LOADING && (!AR || AR.isLobby)) {
+    if (hostStarted && PRIVATE_ROOM.screenOpen && !AR_LOADING && !AR) {
       PRIVATE_ROOM.active = true;
       PRIVATE_ROOM.started = true;
       closePrivateSlide(true);
@@ -1561,13 +1546,11 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     const cleanCode = String(code || '').trim();
     if (!cleanCode) return;
 
-    // 1. Set global SQUAD_ID used by the game's real-time multiplayer backend
     if (typeof SQUAD_ID !== 'undefined') {
       try { SQUAD_ID = cleanCode; } catch (e) {}
     }
     window.SQUAD_ID = cleanCode;
 
-    // 2. Call the game's native squad creation / join functions so PC & Mobile share the exact same backend room
     if (isCreating) {
       if (typeof createSquad === 'function') {
         try {
@@ -1585,7 +1568,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       }
     }
 
-    // 3. Immediately pull existing squad members from backend if already connected
     if (typeof squadMembers === 'function') {
       try {
         const mems = squadMembers();
@@ -1759,48 +1741,31 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     return result;
   }
 
-  // Uses the exact same invitation pipeline as the Home Lobby team invitation
   function triggerNativeTeamInvite(friend, roomCode) {
     const fId = friend.id;
     const fName = friend.name;
     let invoked = false;
 
     const fns = [
+      typeof inviteFriendToPlay === 'function' ? inviteFriendToPlay : null,
       typeof sendInvite === 'function' ? sendInvite : null,
       typeof inviteFriend === 'function' ? inviteFriend : null,
       typeof inviteToSquad === 'function' ? inviteToSquad : null,
-      typeof sendSquadInvite === 'function' ? sendSquadInvite : null,
-      typeof window.sendInvite === 'function' ? window.sendInvite : null,
-      typeof window.inviteFriend === 'function' ? window.inviteFriend : null
+      typeof sendSquadInvite === 'function' ? sendSquadInvite : null
     ].filter(Boolean);
 
     fns.forEach(fn => {
       if (invoked) return;
       try {
-        fn(fId, roomCode);
+        fn(fId, fName);
         invoked = true;
       } catch (e) {
         try {
-          fn(fName, roomCode);
+          fn(fId, roomCode);
           invoked = true;
         } catch (e2) {}
       }
     });
-
-    // Also try clicking the matching native Home Lobby invite button if mounted in DOM
-    if (!invoked) {
-      const domBtns = Array.from(document.querySelectorAll('#ui button, .pop button, .modal button'));
-      const matchingBtn = domBtns.find(b => {
-        const rowText = (b.parentElement ? b.parentElement.textContent : '').toLowerCase();
-        return rowText.includes(fName.toLowerCase()) && /invite|\+/i.test(b.textContent || '');
-      });
-      if (matchingBtn) {
-        try {
-          matchingBtn.click();
-          invoked = true;
-        } catch (e) {}
-      }
-    }
 
     return invoked;
   }
@@ -1932,7 +1897,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
       : '';
 
     screen.innerHTML = `
-      <!-- TOP BAR -->
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(7,12,24,0.96);border-bottom:1px solid rgba(56,189,248,0.28);gap:8px;flex-wrap:wrap;flex-shrink:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <button type="button" id="pm-back-btn" style="background:rgba(30,41,59,0.9);border:1px solid rgba(148,163,184,0.35);color:#facc15;font-weight:900;font-size:12px;padding:6px 10px;border-radius:3px;cursor:pointer">◀ BACK</button>
@@ -1953,7 +1917,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         </div>
       </div>
 
-      <!-- SCROLLABLE BODY -->
       <div class="pm-grid" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px">
         <style>
           .pm-grid { display:grid; grid-template-columns:255px 1fr 240px; gap:12px; align-content:start; }
@@ -1962,7 +1925,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
           }
         </style>
 
-        <!-- MATCH SETTINGS & JOIN ROOM -->
         <div style="background:rgba(10,16,30,0.92);border:1px solid rgba(148,163,184,0.25);border-radius:4px;padding:11px;display:flex;flex-direction:column;gap:10px">
           <div style="background:#1e293b;padding:6px 10px;font-weight:900;font-size:11px;letter-spacing:.08em;color:#f8fafc;border-left:3px solid #facc15">
             MATCH SETTINGS
@@ -2007,7 +1969,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
           </div>
         </div>
 
-        <!-- TEAM ALPHA & TEAM BRAVO ROSTER -->
         <div style="display:flex;flex-direction:column;gap:14px;padding:4px 6px">
           <div style="background:rgba(10,16,30,0.65);border:1px solid rgba(56,189,248,0.25);border-radius:4px;padding:10px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -2030,7 +1991,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
           </div>
         </div>
 
-        <!-- FRIEND INVITE PANEL -->
         <div style="background:rgba(10,16,30,0.92);border:1px solid rgba(148,163,184,0.25);border-radius:4px;padding:11px;display:flex;flex-direction:column;gap:9px">
           <div style="background:#e2e8f0;color:#080e1c;padding:6px 10px;font-weight:900;font-size:11px;letter-spacing:.1em;text-align:center;border-radius:2px">
             INVITE FRIENDS ≪
@@ -2049,7 +2009,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         </div>
       </div>
 
-      <!-- BOTTOM BAR -->
       <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:rgba(7,12,24,0.97);border-top:1px solid rgba(148,163,184,0.22);gap:10px;flex-wrap:wrap;flex-shrink:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <button type="button" id="pm-loadout-btn" style="background:#1e293b;border:1px solid rgba(148,163,184,0.4);color:#f8fafc;font-weight:900;font-size:11px;padding:8px 13px;border-radius:3px;cursor:pointer">🎒 LOADOUT</button>
@@ -2232,7 +2191,11 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         PRIVATE_ROOM.started = true;
         pushLobbySync();
         closePrivateSlide(true);
-        startMatch(PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' ? SQUAD_ID : null));
+        if (typeof launchSquadMatch === 'function' && typeof SQUAD_ID !== 'undefined' && SQUAD_ID && typeof isSquadHost === 'function' && isSquadHost()) {
+          launchSquadMatch();
+        } else {
+          startMatch(PRIVATE_ROOM.roomId || (typeof SQUAD_ID !== 'undefined' ? SQUAD_ID : null));
+        }
       };
     }
   }
@@ -2265,7 +2228,7 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
 
     clearInterval(lobbyPollTimer);
     lobbyPollTimer = setInterval(() => {
-      if (!PRIVATE_ROOM.screenOpen) {
+      if (!PRIVATE_ROOM.screenOpen || AR) {
         clearInterval(lobbyPollTimer);
         return;
       }
@@ -2299,16 +2262,12 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
 
   window.openPrivateRoom = openPrivateSlide;
 
-  // Background Home-Lobby Map Sync Poller (keeps PC & Mobile Home Lobby on the exact same map)
   setInterval(() => {
-    if (AR && !AR.isLobby) return;
+    if (AR) return;
     if (typeof SQUAD_ID !== 'undefined' && SQUAD_ID) {
       ensureLobbyNetworkBridge();
       if (typeof squadMembers === 'function') {
         try { ingestSquadMembers(squadMembers()); } catch (e) {}
-      }
-      if (typeof syncBattleState === 'function') {
-        try { syncBattleState(); } catch (e) {}
       }
     }
   }, 900);
@@ -2318,7 +2277,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     setTimeout(() => openPrivateSlide(urlRoom), 450);
   }
 
-  // Inject Private Room button + ALL maps (including Tactical Killhouse 3D) into Home Lobby on BOTH PC and Mobile
   function injectIntoBattleMapsScreen() {
     const ui = document.getElementById('ui');
     if (!ui) return;
@@ -2352,7 +2310,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
     if (shipmentCard && shipmentCard.parentElement) {
       const mapListCol = shipmentCard.parentElement;
 
-      // Ensure Tactical Killhouse 3D map card is visible on BOTH PC and Mobile Home Lobby
       if (!document.getElementById('killhouse-map-card') && !(mapListCol.textContent || '').toUpperCase().includes('TACTICAL KILLHOUSE')) {
         const khCard = document.createElement('div');
         khCard.id = 'killhouse-map-card';
@@ -2373,7 +2330,6 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
         mapListCol.appendChild(khCard);
       }
 
-      // Hook clicks on existing Home Lobby map cards so selecting any map syncs immediately to teammates
       Array.from(mapListCol.children).forEach(child => {
         if (child.dataset.syncHooked || child.id === 'priv-map-card') return;
         child.dataset.syncHooked = '1';
@@ -2424,13 +2380,12 @@ function getWeaponSpec(gunIdOrDef, loadCfg = null) {
 /* ===== PRE-MATCH DEPLOYMENT LOADING SCREEN ===== */
 let AR_LOADING = false;
 function startMatch(squadId = null) {
-  if ((AR && !AR.isLobby) || AR_LOADING) return;
-  if (AR && AR.isLobby) AR = null;
+  if (AR || AR_LOADING) return;
   if (typeof THREE === 'undefined') return toast('3D Engine unavailable on this browser.');
   AR_LOADING = true;
+  lobbyBridgeActive = false;
   if (typeof SFX !== 'undefined' && SFX.deploy) SFX.deploy();
 
-  // Resolve synced map across Private Room OR Home Lobby Squad so Host & Friend always enter the EXACT same map
   let resolvedMap = null;
   if (PRIVATE_ROOM.active) {
     const m = getMapById(PRIVATE_ROOM.mapId);
@@ -3556,7 +3511,6 @@ function launchArenaWorld(squadId, mapCfg) {
     });
   }
 
-  /* ===== PC MOUSE 360° AIM ===== */
   let cHoldTimer = null, cHeldTriggered = false;
 
   function enterPcAimMode() {
@@ -3717,7 +3671,6 @@ function launchArenaWorld(squadId, mapCfg) {
     enterPcAimMode();
   }
 
-  /* ===== MOBILE TOUCH CONTROLS ===== */
   if (!isPC) {
     const joyEl = document.getElementById('hc-joy');
     const knobEl = document.getElementById('hc-knob');
@@ -4206,47 +4159,102 @@ function launchArenaWorld(squadId, mapCfg) {
         if (Math.hypot(px - pk.x, pz - pk.z) < 1.35) {
           pk.cd = 10;
           pk.mesh.visible = false;
-          if (typeof SFX !== 'undefined' && SFX.coin) SFX.coin();
           if (pk.isMed) {
             hp = Math.min(maxHp, hp + 40);
-            setFeed('➕ MEDKIT PICKED UP (+40 HP)');
+            setFeed('💚 MEDKIT +40 HP');
           } else {
-            wState.forEach((st, i) => { st.reserve += weapons[i].mag; });
-            setFeed('📦 AMMO CRATE PICKED UP!');
+            wState[wIdx].reserve += weapons[wIdx].mag;
+            setFeed('🟡 AMMO PACK +MAGAZINE');
           }
+          if (typeof SFX !== 'undefined' && SFX.coin) SFX.coin();
           updateHud();
         }
       });
 
-      for (let i = grenades.length - 1; i >= 0; i--) {
-        const g = grenades[i];
-        g.vy -= 22 * dt;
-        g.mesh.position.x += g.vx * dt;
-        g.mesh.position.y += g.vy * dt;
-        g.mesh.position.z += g.vz * dt;
-        if (g.mesh.position.y <= 0.16) {
-          g.mesh.position.y = 0.16;
-          g.vy *= -0.35;
-          g.vx *= 0.65;
-          g.vz *= 0.65;
-        }
-        g.fuse -= dt;
-        if (g.fuse <= 0) {
-          GUN_AUDIO.playExplosion();
-          const gx = g.mesh.position.x, gz = g.mesh.position.z;
-          bots.forEach(b => {
-            if (b.alive && Math.hypot(b.x - gx, b.z - gz) < 7.5) damageBot(b, 130);
-          });
-          if (isPrivatePvP) {
-            Object.entries(remotePeers).forEach(([pid, rp]) => {
-              const pPos = rp.av.grp.position;
-              if (Math.hypot(pPos.x - gx, pPos.z - gz) < 7.5) damageRemotePeer(pid, rp, 130);
-            });
+      bots.forEach(b => {
+        if (b.dying) {
+          b.deathProg = Math.min(1, b.deathProg + dt * 2.8);
+          b.av.setDeathFall(b.deathProg);
+          b.av.update(dt);
+          if (b.deathProg >= 1) {
+            b.dying = false;
+            b.av.grp.visible = false;
           }
-          scene.remove(g.mesh);
-          grenades.splice(i, 1);
+          return;
         }
-      }
+
+        if (!b.alive) {
+          b.respawnT -= dt;
+          if (b.respawnT <= 0) {
+            b.alive = true;
+            b.dying = false;
+            b.deathProg = 0;
+            b.hp = 100;
+            b.av.setDeathFall(0);
+            b.av.updateTag('BOT ' + (b.id + 1), 100);
+            b.av.grp.visible = true;
+            const sp = botSpawns[b.id % botSpawns.length];
+            b.x = sp[0];
+            b.z = sp[1];
+            b.y = getFloorHeight(b.x, b.z);
+            b.av.grp.position.set(b.x, b.y, b.z);
+          }
+          return;
+        }
+
+        const dx = px - b.x, dz = pz - b.z, dist = Math.hypot(dx, dz);
+        b.strafeT -= dt;
+        if (b.strafeT <= 0) {
+          b.strafeT = 1.4 + Math.random() * 2.0;
+          b.dir = dist < 34 ? Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.1 : Math.random() * Math.PI * 2;
+        }
+        const bSpd = dist < 34 ? 4.2 : 3.2;
+        const bPos = resolveCollisions(b.x + Math.sin(b.dir) * bSpd * dt, b.z + Math.cos(b.dir) * bSpd * dt, 0.55);
+        b.x = bPos.x;
+        b.z = bPos.z;
+        b.y = getFloorHeight(b.x, b.z);
+        b.rotY = dist < 34 ? Math.atan2(dx, dz) : b.dir;
+        b.av.grp.position.set(b.x, b.y, b.z);
+        b.av.grp.rotation.y = b.rotY;
+        b.av.updateTag('BOT ' + (b.id + 1), b.hp);
+        b.av.setAnim('Walk', 1.0);
+        b.av.update(dt);
+
+        if (dist < 22) {
+          b.fireCd -= dt;
+          if (b.fireCd <= 0) {
+            b.fireCd = 1.6 + Math.random() * 1.5;
+            b.av.triggerMuzzle();
+            const bOrigin = new THREE.Vector3(b.x, b.y + 1.35, b.z);
+            const bTarget = new THREE.Vector3(px, py + 1.1, pz);
+            spawnTracer(bOrigin, bTarget, 0xff5577);
+            if (!isPrivatePvP) {
+              hp = Math.max(0, hp - 7);
+              updateHud();
+              if (hp <= 0) {
+                hp = 100;
+                px = 1.5;
+                pz = isKillhouse ? 29 : 28;
+                py = getFloorHeight(px, pz);
+                updateHud();
+                setFeed('💀 DOWNED! RESPAWNED AT BASE');
+              }
+            }
+          }
+        }
+      });
+
+      Object.values(remotePeers).forEach(rp => {
+        const g = rp.av.grp;
+        const dx = rp.tx - g.position.x, dz = rp.tz - g.position.z;
+        const moving = Math.hypot(dx, dz) > 0.08;
+        g.position.x += dx * Math.min(1, dt * 12);
+        g.position.y += ((rp.ty || 0) - g.position.y) * Math.min(1, dt * 12);
+        g.position.z += dz * Math.min(1, dt * 12);
+        g.rotation.y += shortestAngleDiff(g.rotation.y, rp.try) * Math.min(1, dt * 14);
+        rp.av.setAnim(moving ? (rp.anim === 'Run' ? 'Run' : 'Walk') : 'Idle', 1.0);
+        rp.av.update(dt);
+      });
 
       for (let i = tracers.length - 1; i >= 0; i--) {
         tracers[i].life -= dt;
@@ -4256,134 +4264,125 @@ function launchArenaWorld(squadId, mapCfg) {
           tracers.splice(i, 1);
         }
       }
+
+      for (let i = grenades.length - 1; i >= 0; i--) {
+        const gr = grenades[i];
+        gr.fuse -= dt;
+        gr.vy -= 18 * dt;
+        gr.mesh.position.x += gr.vx * dt;
+        gr.mesh.position.y += gr.vy * dt;
+        gr.mesh.position.z += gr.vz * dt;
+        if (gr.mesh.position.y < 0.16) {
+          gr.mesh.position.y = 0.16;
+          gr.vy = Math.abs(gr.vy) * 0.45;
+          gr.vx *= 0.72;
+          gr.vz *= 0.72;
+        }
+        if (gr.fuse <= 0) {
+          const ex = gr.mesh.position.x, ez = gr.mesh.position.z;
+          scene.remove(gr.mesh);
+          gr.mesh.geometry.dispose();
+          grenades.splice(i, 1);
+          GUN_AUDIO.playExplosion();
+          if (typeof SFX !== 'undefined' && SFX.boom) SFX.boom();
+          bots.forEach(b => {
+            if (b.alive && Math.hypot(b.x - ex, b.z - ez) < 7.5) damageBot(b, 120);
+          });
+        }
+      }
+
       for (let i = dustParts.length - 1; i >= 0; i--) {
-        const d = dustParts[i];
-        d.life -= dt;
-        d.mesh.scale.addScalar(dt * 2.5);
-        d.mesh.material.opacity = Math.max(0, d.life * 1.4);
-        if (d.life <= 0) {
-          scene.remove(d.mesh);
-          d.mesh.geometry.dispose();
+        const dp = dustParts[i];
+        dp.life -= dt;
+        dp.mesh.position.y += dt * 1.4;
+        dp.mesh.scale.addScalar(dt * 1.8);
+        dp.mesh.material.opacity = Math.max(0, dp.life * 1.4);
+        if (dp.life <= 0) {
+          scene.remove(dp.mesh);
+          dp.mesh.geometry.dispose();
           dustParts.splice(i, 1);
         }
       }
 
-      bots.forEach(b => {
-        if (!b.alive) {
-          if (b.dying) {
-            b.deathProg = Math.min(1, b.deathProg + dt * 2.4);
-            b.av.setDeathFall(b.deathProg);
-            if (b.deathProg >= 1) b.dying = false;
-          }
-          b.respawnT -= dt;
-          if (b.respawnT <= 0) {
-            const sp = botSpawns[b.id % botSpawns.length];
-            b.x = sp[0];
-            b.z = sp[1];
-            b.hp = 100;
-            b.alive = true;
-            b.dying = false;
-            b.deathProg = 0;
-            b.av.setDeathFall(0);
-            b.av.grp.position.set(b.x, 0, b.z);
-          }
-          return;
-        }
-
-        const dx = px - b.x, dz = pz - b.z;
-        const dist = Math.hypot(dx, dz);
-        b.strafeT -= dt;
-        if (b.strafeT <= 0) {
-          b.strafeT = 1.4 + Math.random() * 2;
-          b.dir = Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.3;
-        }
-
-        const chasing = dist > 12;
-        const moveSpd = chasing ? 3.5 : 1.7;
-        const vx = Math.sin(b.dir) * moveSpd;
-        const vz = Math.cos(b.dir) * moveSpd;
-        const nx = Math.max(-44, Math.min(44, b.x + vx * dt));
-        const nz = Math.max(-44, Math.min(44, b.z + vz * dt));
-        let blocked = false;
-        for (const c of colliders) {
-          if (nx + 0.55 > c.minX && nx - 0.55 < c.maxX && nz + 0.55 > c.minZ && nz - 0.55 < c.maxZ) {
-            blocked = true;
-            break;
-          }
-        }
-        if (!blocked) {
-          b.x = nx;
-          b.z = nz;
-        } else {
-          b.dir += Math.PI * 0.65;
-        }
-
-        const faceX = chasing ? vx : dx;
-        const faceZ = chasing ? vz : dz;
-        const targetBotRot = Math.atan2(-faceX, -faceZ);
-        b.rotY += shortestAngleDiff(b.rotY, targetBotRot) * Math.min(1, dt * 10);
-
-        b.av.grp.position.set(b.x, 0, b.z);
-        b.av.grp.rotation.y = b.rotY;
-        b.av.setAnim(chasing ? 'Run' : 'Walk', chasing ? 1.0 : 0.85);
-        b.av.update(dt);
-
-        b.fireCd -= dt;
-        if (b.fireCd <= 0 && dist < 38) {
-          b.fireCd = 1.4 + Math.random() * 1.3;
-          b.av.triggerMuzzle();
-          const from = new THREE.Vector3(b.x, 1.42, b.z);
-          const to = new THREE.Vector3(px + (Math.random() - 0.5) * 1.6, py + 1.2, pz + (Math.random() - 0.5) * 1.6);
-          spawnTracer(from, to, 0xff2a55);
-          const hitChance = slideTimer > 0 ? 0.12 : crouching ? 0.22 : 0.32;
-          if (Math.random() < hitChance) {
-            hp = Math.max(0, hp - 8);
-            updateHud();
-            if (hp <= 0) {
-              hp = 100;
-              px = 0;
-              pz = 28;
-              setFeed('⚠️ RESPAWNED AT BASE CAMP!');
-              updateHud();
-            }
-          }
-        }
-      });
-
-      Object.values(remotePeers).forEach(rp => {
-        const stepD = Math.hypot(rp.tx - rp.av.grp.position.x, rp.tz - rp.av.grp.position.z);
-        rp.av.grp.position.x += (rp.tx - rp.av.grp.position.x) * 0.28;
-        rp.av.grp.position.y += (rp.ty - rp.av.grp.position.y) * 0.28;
-        rp.av.grp.position.z += (rp.tz - rp.av.grp.position.z) * 0.28;
-        rp.av.grp.rotation.y += shortestAngleDiff(rp.av.grp.rotation.y, rp.try) * 0.3;
-        rp.av.setAnim(stepD > 0.04 ? 'Run' : (rp.anim || 'Idle'));
-        rp.av.update(dt);
-      });
+      drawRadar();
+      renderer.render(scene, camera);
 
       syncAccum += dt;
-      if (syncAccum >= 0.07) {
+      if (syncAccum > 0.14) {
         syncAccum = 0;
-        if (typeof SQUAD_ID !== 'undefined' && SQUAD_ID && typeof syncBattleState === 'function') syncBattleState();
+        if (typeof syncBattleState === 'function') syncBattleState();
+        if (isPrivatePvP) {
+          const me = getCurrentUserProfile();
+          const rooms = readStoredRooms();
+          const ex = rooms[PRIVATE_ROOM.roomId] || {};
+          const members = Object.assign({}, ex.members || {});
+          members[me.pid] = Object.assign({}, members[me.pid] || {}, {
+            pid: me.pid,
+            name: me.name,
+            lvl: me.lvl,
+            isHost: PRIVATE_ROOM.isHost,
+            team: PRIVATE_ROOM.myTeam,
+            ready: true,
+            gunId: weapons[wIdx].id,
+            started: true,
+            x: +px.toFixed(2),
+            y: +py.toFixed(2),
+            z: +pz.toFixed(2),
+            ry: +charYaw.toFixed(2),
+            hp: Math.ceil(hp),
+            anim: curAnimState,
+            hit: pendingHit
+          });
+          broadcastRoomEvent({
+            type: 'room_snapshot',
+            roomId: PRIVATE_ROOM.roomId,
+            snapshot: Object.assign({}, ex, {
+              roomId: PRIVATE_ROOM.roomId,
+              mode: PRIVATE_ROOM.mode,
+              mapId: mapCfg.id,
+              mapName: mapCfg.name,
+              started: true,
+              members
+            })
+          });
+        }
       }
-    } catch (simErr) {
-      console.error('Arena sim step warning:', simErr);
+    } catch (frameErr) {
+      console.error('Arena frame error:', frameErr);
     }
 
-    drawRadar();
-    renderer.render(scene, camera);
+    rafId = requestAnimationFrame(stepAndRender);
   }
 
-  function loop(nowT) {
-    if (!AR) return;
-    rafId = requestAnimationFrame(loop);
-    stepAndRender(nowT);
+  function cleanup() {
+    if (rafId) cancelAnimationFrame(rafId);
+    window.removeEventListener('resize', resizeArena);
+    clearTimeout(cHoldTimer);
+    if (isPC) {
+      document.removeEventListener('pointerlockchange', onPointerLockChange);
+      window.removeEventListener('mousemove', onPcMouseMove);
+      window.removeEventListener('mousedown', onPcMouseDown);
+      window.removeEventListener('mouseup', onPcMouseUp);
+      window.removeEventListener('wheel', onPcWheel);
+      window.removeEventListener('keydown', onPcKeyDown);
+      window.removeEventListener('keyup', onPcKeyUp);
+      try { if (document.pointerLockElement === acv) document.exitPointerLock(); } catch (e) {}
+    }
+    if (arenaEl) arenaEl.remove();
+    if (lobbyUi) lobbyUi.style.display = '';
+    if (lobbyGl) lobbyGl.style.display = '';
+    if (typeof look === 'function') look();
+    if (typeof render === 'function') render();
   }
 
   AR = {
     paused: 0,
     getPacket() {
-      return {
+      const pkt = {
         inMatch: true,
+        privLobby: false,
+        roomId: PRIVATE_ROOM.roomId || squadId || '',
+        mode: PRIVATE_ROOM.mode,
         mapId: mapCfg.id,
         mapName: mapCfg.name,
         team: PRIVATE_ROOM.myTeam,
@@ -4392,108 +4391,72 @@ function launchArenaWorld(squadId, mapCfg) {
         x: +px.toFixed(2),
         y: +py.toFixed(2),
         z: +pz.toFixed(2),
-        ry: +charYaw.toFixed(3),
-        anim: curAnimState,
+        ry: +charYaw.toFixed(2),
         hp: Math.ceil(hp),
         gunId: weapons[wIdx].id,
-        kills,
-        hit: pendingHit,
+        anim: curAnimState,
         ts: Date.now()
       };
+      if (pendingHit) {
+        pkt.hit = pendingHit;
+        pendingHit = null;
+      }
+      return pkt;
     },
     syncTeammates,
-    cleanup() {
-      cancelAnimationFrame(rafId);
-      clearTimeout(cHoldTimer);
-      window.removeEventListener('resize', resizeArena);
-      if (isPC) {
-        document.removeEventListener('pointerlockchange', onPointerLockChange);
-        window.removeEventListener('mousemove', onPcMouseMove);
-        window.removeEventListener('mousedown', onPcMouseDown);
-        window.removeEventListener('mouseup', onPcMouseUp);
-        window.removeEventListener('wheel', onPcWheel);
-        window.removeEventListener('keydown', onPcKeyDown);
-        window.removeEventListener('keyup', onPcKeyUp);
-        try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {}
-      }
-      renderer.dispose();
-      const glEl = document.getElementById('gl');
-      if (glEl) glEl.style.display = 'block';
-      const uiEl = document.getElementById('ui');
-      if (uiEl) uiEl.style.display = 'block';
-    },
+    cleanup,
     stats: () => ({ kills, mapName: mapCfg.name })
   };
 
-  if (typeof squadMembers === 'function') syncTeammates(squadMembers());
-  stepAndRender(performance.now() + 16);
-  rafId = requestAnimationFrame(loop);
+  updateHud();
+  prevT = performance.now();
+  rafId = requestAnimationFrame(stepAndRender);
 }
 
-function exitMatch(claimRewards = false) {
+function exitMatch(claimReward) {
   if (!AR) return;
-  const { kills, mapName } = AR.stats();
+  const st = AR.stats ? AR.stats() : { kills: 0, mapName: '' };
   AR.cleanup();
   AR = null;
+  AR_LOADING = false;
   PRIVATE_ROOM.started = false;
-  const el = document.getElementById('arena');
-  if (el) el.remove();
-  if (typeof markExitedBattle === 'function') markExitedBattle();
 
-  if (claimRewards) {
-    const bonusCoins = 30 + kills * 12;
-    const bonusCp = kills >= 3 ? 15 : 5;
-    const bonusXp = 45 + kills * 20;
-    S.coins += bonusCoins;
-    S.cp += bonusCp;
-    if (kills >= 1) S.wins = (S.wins || 0) + 1;
-    if (typeof addXP === 'function') addXP(bonusXp);
-    if (typeof save === 'function') save();
-    if (typeof SFX !== 'undefined' && SFX.lvlup) SFX.lvlup();
-    toast(`🏆 EXTRACTED (${esc(mapName)})! +${bonusCoins} 🪙 · +${bonusCp} CP · +${bonusXp} XP`);
-  } else {
-    toast('🚪 Exited Battle');
-  }
-  if (typeof render === 'function') render();
-}
-
-function confirmExitMatch() {
-  if (!AR) return;
-  AR.paused = 1;
-  if (document.pointerLockElement) {
-    try { document.exitPointerLock(); } catch (e) {}
-  }
-  const { kills, mapName } = AR.stats();
-  const modal = document.createElement('div');
-  modal.className = 'modal';
-  modal.innerHTML = `
-    <div class="pop R" style="max-width:25rem;text-align:center">
-      <div class="rR">🚪 EXIT 3D BATTLE?</div>
-      <div class="s" style="margin:6px 0 12px">Map: <b>${esc(mapName)}</b> · Eliminations: <b>${kills}</b></div>
-      <div class="row" style="justify-content:center">
-        <button class="sm alt" id="m-resume">RESUME</button>
-        <button class="sm" id="m-claim">CLAIM REWARDS & EXIT</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  document.getElementById('m-resume').onclick = () => {
-    modal.remove();
-    if (AR) {
-      AR.paused = 0;
-      if (isPCDevice()) {
-        const acvEl = document.getElementById('acv');
-        if (acvEl && acvEl.requestPointerLock) {
-          try {
-            const p = acvEl.requestPointerLock();
-            if (p && p.catch) p.catch(() => {});
-          } catch (e) {}
-        }
-      }
+  if (typeof SQUAD_META !== 'undefined' && SQUAD_META && typeof isSquadHost === 'function' && isSquadHost()) {
+    SQUAD_META.status = 'lobby';
+    if (typeof pushMyPlayerDoc === 'function') {
+      try { pushMyPlayerDoc(); } catch (e) {}
     }
-  };
-  document.getElementById('m-claim').onclick = () => {
-    modal.remove();
-    exitMatch(true);
-  };
+  }
+
+  if (PRIVATE_ROOM.roomId) {
+    const me = getCurrentUserProfile();
+    const rooms = readStoredRooms();
+    const ex = rooms[PRIVATE_ROOM.roomId] || {};
+    const members = Object.assign({}, ex.members || {});
+    if (members[me.pid]) {
+      members[me.pid] = Object.assign({}, members[me.pid], { started: false, ready: true });
+    }
+    broadcastRoomEvent({
+      type: 'room_snapshot',
+      roomId: PRIVATE_ROOM.roomId,
+      snapshot: Object.assign({}, ex, { started: false, members })
+    });
+  }
+
+  if (claimReward && typeof S === 'object' && S) {
+    const bonusCoins = 25 + st.kills * 10;
+    const bonusCp = st.kills >= 2 ? 10 : 0;
+    S.coins = (S.coins || 0) + bonusCoins;
+    S.cp = (S.cp || 0) + bonusCp;
+    S.wins = (S.wins || 0) + (st.kills >= 1 ? 1 : 0);
+    if (typeof addXP === 'function') addXP(35 + st.kills * 15);
+    if (typeof SFX !== 'undefined' && SFX.quest) SFX.quest();
+    if (typeof save === 'function') save();
+    if (typeof render === 'function') render();
+    toast(`🏆 Extracted from ${st.mapName}! +${bonusCoins} 🪙` + (bonusCp ? ` +${bonusCp} 💎 CP` : ''));
+  } else {
+    if (typeof save === 'function') save();
+    if (typeof render === 'function') render();
+    toast('Exited 3D Battle Arena');
+  }
 }
