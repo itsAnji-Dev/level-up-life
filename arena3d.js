@@ -1,4 +1,4 @@
-/* ===== 3D SOLDIER, FPP VIEWMODEL, RELOAD/CROUCH/SLIDE ANIMATIONS & TEXTURED 3D WORLD ===== */
+/* ===== 3D SOLDIER, FPP VIEWMODEL, RELOAD/CROUCH/SLIDE, LOADING SCREEN & TEXTURED 3D WORLD ===== */
 let AR = null;
 
 function isPCDevice() {
@@ -14,7 +14,7 @@ function shortestAngleDiff(from, to) {
   return d;
 }
 
-/* ===== PROCEDURAL PBR CANVAS TEXTURES FOR REALISTIC 3D ENVIRONMENT ===== */
+/* ===== PROCEDURAL CANVAS TEXTURES FOR REALISTIC 3D ENVIRONMENT ===== */
 const TEX_CACHE = {};
 function getArenaTextures(mapId = 'firing_range') {
   if (TEX_CACHE[mapId]) return TEX_CACHE[mapId];
@@ -29,16 +29,18 @@ function getArenaTextures(mapId = 'firing_range') {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(repeatX, repeatY);
+    tex.needsUpdate = true;
     return tex;
   }
 
-  // 1. Terrain Grass / Desert Earth Texture
   const isDesert = mapId === 'nuketown';
   const isDock = mapId === 'shipment';
+
+  // 1. Terrain Grass / Desert Earth Texture
   const groundTex = makeCanvasTex(256, 256, (ctx, w, h) => {
     ctx.fillStyle = isDesert ? '#8d734b' : isDock ? '#3b424c' : '#4a6332';
     ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < 1800; i++) {
+    for (let i = 0; i < 1600; i++) {
       const x = Math.random() * w, y = Math.random() * h;
       ctx.fillStyle = isDesert
         ? (Math.random() > 0.5 ? '#785e38' : '#a3875c')
@@ -53,25 +55,21 @@ function getArenaTextures(mapId = 'firing_range') {
   const roadTex = makeCanvasTex(256, 256, (ctx, w, h) => {
     ctx.fillStyle = '#262a33';
     ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < 1400; i++) {
+    for (let i = 0; i < 1200; i++) {
       ctx.fillStyle = Math.random() > 0.5 ? '#1e222a' : '#323844';
       ctx.fillRect(Math.random() * w, Math.random() * h, 2, 2);
     }
-    // Concrete curbs
     ctx.fillStyle = '#64748b';
     ctx.fillRect(0, 0, 14, h);
     ctx.fillRect(w - 14, 0, 14, h);
-    // White shoulder lines
     ctx.fillStyle = '#cbd5e1';
     ctx.fillRect(20, 0, 4, h);
     ctx.fillRect(w - 24, 0, 4, h);
-    // Yellow dashed center divider
     ctx.fillStyle = '#eab308';
     ctx.fillRect(w / 2 - 4, 16, 3, 92);
     ctx.fillRect(w / 2 + 2, 16, 3, 92);
     ctx.fillRect(w / 2 - 4, 144, 3, 92);
     ctx.fillRect(w / 2 + 2, 144, 3, 92);
-    // Asphalt cracks
     ctx.strokeStyle = '#14171d';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -80,27 +78,24 @@ function getArenaTextures(mapId = 'firing_range') {
     ctx.stroke();
   }, 1, 14);
 
-  // 3. Tactical Building Concrete & Brick Facade Texture
+  // 3. Tactical Building Concrete & Window Facade Texture
   const wallTex = makeCanvasTex(256, 256, (ctx, w, h) => {
     ctx.fillStyle = isDesert ? '#c29b6e' : '#64748b';
     ctx.fillRect(0, 0, w, h);
-    // Masonry / concrete panel lines
     ctx.fillStyle = 'rgba(15,23,42,0.18)';
     for (let y = 0; y < h; y += 32) ctx.fillRect(0, y, w, 2);
     for (let x = 0; x < w; x += 64) ctx.fillRect(x, 0, 2, h);
-    // Weathering grime at base
     const grd = ctx.createLinearGradient(0, h * 0.65, 0, h);
     grd.addColorStop(0, 'rgba(15,23,42,0)');
     grd.addColorStop(1, 'rgba(15,23,42,0.45)');
     ctx.fillStyle = grd;
     ctx.fillRect(0, h * 0.65, w, h * 0.35);
-    // Tactical Windows
     [[34, 42], [154, 42], [34, 148], [154, 148]].forEach(([wx, wy]) => {
       ctx.fillStyle = '#1e293b';
       ctx.fillRect(wx - 4, wy - 4, 72, 62);
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(wx, wy, 64, 54);
-      ctx.fillStyle = 'rgba(148,197,255,0.22)';
+      ctx.fillStyle = 'rgba(148,197,255,0.24)';
       ctx.beginPath();
       ctx.moveTo(wx + 4, wy + 4); ctx.lineTo(wx + 36, wy + 4); ctx.lineTo(wx + 12, wy + 50); ctx.lineTo(wx + 4, wy + 50);
       ctx.fill();
@@ -110,18 +105,20 @@ function getArenaTextures(mapId = 'firing_range') {
     });
   }, 1, 1);
 
-  // 4. Corrugated Shipping Container Bump & Diffuse Texture
-  const contBump = makeCanvasTex(128, 128, (ctx, w, h) => {
+  // 4. Corrugated Shipping Container Diffuse Texture (Mobile-WebGL1 safe, no bumpMap stall)
+  const contTex = makeCanvasTex(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillRect(0, 0, w, h);
     for (let x = 0; x < w; x += 8) {
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
       ctx.fillRect(x, 0, 4, h);
-      ctx.fillStyle = '#444444';
+      ctx.fillStyle = 'rgba(15,23,42,0.34)';
       ctx.fillRect(x + 4, 0, 4, h);
     }
-    ctx.fillStyle = '#cccccc';
+    ctx.fillStyle = 'rgba(15,23,42,0.55)';
     ctx.fillRect(0, 0, w, 10);
     ctx.fillRect(0, h - 10, w, 10);
-  }, 4, 1);
+  }, 3, 1);
 
   // 5. Wooden Supply Crate Texture
   const crateTex = makeCanvasTex(128, 128, (ctx, w, h) => {
@@ -137,7 +134,7 @@ function getArenaTextures(mapId = 'firing_range') {
     ctx.stroke();
   }, 1, 1);
 
-  TEX_CACHE[mapId] = { groundTex, roadTex, wallTex, contBump, crateTex };
+  TEX_CACHE[mapId] = { groundTex, roadTex, wallTex, contTex, crateTex };
   return TEX_CACHE[mapId];
 }
 
@@ -148,18 +145,18 @@ function buildDetailedGun3D(gid, isFpp = false) {
   const isMythic = it.r === 'M' || it.r === 'L';
   const g = new THREE.Group();
 
-  const steel = new THREE.MeshStandardMaterial({ color: 0x1b202c, roughness: 0.32, metalness: 0.85 });
-  const gunmetal = new THREE.MeshStandardMaterial({ color: 0x2c3342, roughness: 0.45, metalness: 0.65 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x1b202c, roughness: 0.35, metalness: 0.75 });
+  const gunmetal = new THREE.MeshStandardMaterial({ color: 0x2c3342, roughness: 0.45, metalness: 0.6 });
   const polymer = new THREE.MeshStandardMaterial({ color: 0x222630, roughness: 0.72, metalness: 0.2 });
   const woodOrGold = new THREE.MeshStandardMaterial({
     color: it.id === 7 ? 0xf59e0b : it.id === 5 ? 0x7c2d12 : 0x232936,
-    roughness: it.id === 7 ? 0.22 : 0.58,
-    metalness: it.id === 7 ? 0.88 : 0.3
+    roughness: it.id === 7 ? 0.25 : 0.58,
+    metalness: it.id === 7 ? 0.8 : 0.3
   });
   const trim = new THREE.MeshStandardMaterial({
     color: rCol,
-    roughness: 0.28,
-    metalness: 0.72,
+    roughness: 0.3,
+    metalness: 0.65,
     emissive: rCol,
     emissiveIntensity: isMythic ? 0.55 : 0.16
   });
@@ -172,19 +169,16 @@ function buildDetailedGun3D(gid, isFpp = false) {
   const bodyLen = isSniper ? 0.62 : isLauncher ? 0.72 : isSmg ? 0.34 : 0.50;
   const barrelLen = isSniper ? 0.46 : isLauncher ? 0.32 : isSmg ? 0.16 : 0.30;
 
-  // Buttstock
   if (!isLauncher) {
     const stock = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.115, 0.24), woodOrGold);
     stock.position.set(0, -0.015, -bodyLen * 0.5 - 0.08);
     g.add(stock);
   }
 
-  // Upper & Lower Receiver
   const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.068, 0.105, bodyLen), isLauncher ? woodOrGold : steel);
   receiver.position.set(0, 0.01, 0.06);
   g.add(receiver);
 
-  // Picatinny Top Rail + Individual Rail Notches (for authentic FPP close-up look)
   const railBase = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.016, bodyLen * 0.94), gunmetal);
   railBase.position.set(0, 0.068, 0.08);
   g.add(railBase);
@@ -198,30 +192,25 @@ function buildDetailedGun3D(gid, isFpp = false) {
     }
   }
 
-  // Side Rarity Trim Strip
   const sideStrip = new THREE.Mesh(new THREE.BoxGeometry(0.074, 0.02, bodyLen * 0.78), trim);
   sideStrip.position.set(0, 0.015, 0.08);
   g.add(sideStrip);
 
-  // Forward Handguard / Shroud
   const guard = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.084, bodyLen * 0.56), polymer);
   guard.position.set(0, 0.01, bodyLen * 0.38);
   g.add(guard);
 
-  // Pistol Grip
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.13, 0.065), polymer);
   grip.position.set(0, -0.075, -0.02);
   grip.rotation.x = -0.26;
   g.add(grip);
 
-  // Forward Vertical Foregrip
   if (!isSmg && !isLauncher) {
     const fgrip = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.1, 8), polymer);
     fgrip.position.set(0, -0.075, bodyLen * 0.42);
     g.add(fgrip);
   }
 
-  // Animated Magazine Group (detaches & drops during reload animation)
   const magGroup = new THREE.Group();
   magGroup.position.set(0, -0.11, bodyLen * 0.16);
   if (!isLauncher && !isShotgun) {
@@ -232,12 +221,10 @@ function buildDetailedGun3D(gid, isFpp = false) {
   }
   g.add(magGroup);
 
-  // Animated Charging Bolt Handle (pulls back during reload & firing)
   const boltMesh = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.018, 0.032), gunmetal);
   boltMesh.position.set(0, 0.042, 0.04);
   g.add(boltMesh);
 
-  // Heavy Barrel + Front Iron Sight Post + Muzzle Brake
   const barrelRad = isLauncher ? 0.055 : isShotgun ? 0.022 : 0.015;
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(barrelRad, barrelRad, barrelLen, 10), steel);
   barrel.rotation.x = Math.PI / 2;
@@ -256,7 +243,6 @@ function buildDetailedGun3D(gid, isFpp = false) {
   brake.position.set(0, 0.024, muzzleZ + 0.02);
   g.add(brake);
 
-  // EOTech Holographic Sight (with transparent glass & glowing reticle!) or Sniper Scope
   if (isSniper) {
     const scopeTube = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.025, 0.28, 12), steel);
     scopeTube.rotation.x = Math.PI / 2;
@@ -267,22 +253,19 @@ function buildDetailedGun3D(gid, isFpp = false) {
     lens.position.set(0, 0.11, 0.16);
     g.add(lens);
   } else if (!isLauncher) {
-    // Open-frame Holographic Sight Hood so FPP ADS looks straight through it!
-    const hoodMat = steel;
-    const base = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.018, 0.095), hoodMat);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.018, 0.095), steel);
     base.position.set(0, 0.088, 0.01);
     g.add(base);
-    const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.048, 0.088), hoodMat);
+    const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.048, 0.088), steel);
     wallL.position.set(-0.025, 0.116, 0.01);
     g.add(wallL);
-    const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.048, 0.088), hoodMat);
+    const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.048, 0.088), steel);
     wallR.position.set(0.025, 0.116, 0.01);
     g.add(wallR);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.008, 0.088), hoodMat);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.008, 0.088), steel);
     roof.position.set(0, 0.142, 0.01);
     g.add(roof);
 
-    // Tinted Holo Glass + Glowing Reticle Ring
     const glassMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.042, 0.042), glassMat);
     glass.position.set(0, 0.116, 0.02);
@@ -296,7 +279,6 @@ function buildDetailedGun3D(gid, isFpp = false) {
     g.add(retRing);
   }
 
-  // Muzzle Flash Burst Mesh
   const flashMat = new THREE.MeshBasicMaterial({ color: isMythic ? rCol : 0xffe066, transparent: true, opacity: 0.92 });
   const flash = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), flashMat);
   flash.scale.set(0.8, 0.8, 2.2);
@@ -320,7 +302,6 @@ function createFppViewmodel() {
   const gloveMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.65, metalness: 0.2 });
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xd49b72, roughness: 0.7 });
 
-  // Right Hand & Forearm (grips pistol grip)
   const rArm = new THREE.Group();
   const rForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.044, 0.34, 10), sleeveMat);
   rForearm.rotation.x = Math.PI * 0.42;
@@ -331,7 +312,6 @@ function createFppViewmodel() {
   rArm.add(rGlove);
   weaponPivot.add(rArm);
 
-  // Left Hand & Forearm (supports forward handguard; animates during reload!)
   const lArm = new THREE.Group();
   const lForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.043, 0.38, 10), sleeveMat);
   lForearm.rotation.set(Math.PI * 0.38, -0.35, -0.22);
@@ -351,7 +331,6 @@ function createFppViewmodel() {
   function setGun(gid) {
     if (gunObj) weaponPivot.remove(gunObj.group);
     gunObj = buildDetailedGun3D(gid, true);
-    // Rotate gun so barrel (+Z) points straight forward (-Z in camera space)
     gunObj.group.rotation.y = Math.PI;
     weaponPivot.add(gunObj.group);
   }
@@ -362,7 +341,6 @@ function createFppViewmodel() {
   }
 
   function update(dt, st) {
-    // st: { visible, scoped, mag, sprint, reloading, reloadProg, crouching, slideLerp }
     root.visible = !!st.visible;
     if (!st.visible) return;
 
@@ -374,14 +352,12 @@ function createFppViewmodel() {
       if (gunObj && gunObj.flash && recoilKick < 0.45) gunObj.flash.visible = false;
     }
 
-    // Hipfire position (bottom-right like PUBG/CODM) vs Centered Holo ADS position
     const hipX = 0.20, hipY = -0.22, hipZ = -0.44;
     const adsX = 0.00, adsY = -0.142, adsZ = -0.34;
     let px = hipX + (adsX - hipX) * adsLerp;
     let py = hipY + (adsY - hipY) * adsLerp;
     let pz = hipZ + (adsZ - hipZ) * adsLerp;
 
-    // Walk / Run Bobbing & Slide Tilt
     const moveRate = st.mag > 0.1 ? (st.sprint > 1.1 ? 13 : 8.5) : 2.0;
     bobT += dt * moveRate;
     const bobAmp = (st.mag > 0.1 ? 0.014 * st.mag : 0.0025) * (1 - adsLerp * 0.75);
@@ -396,9 +372,8 @@ function createFppViewmodel() {
       st.slideLerp * 0.28 + Math.sin(bobT * 0.5) * bobAmp * 1.4
     );
 
-    // Reload Animation (Weapon tilt + Left Hand detaches mag + inserts fresh mag + racks bolt)
     if (st.reloading && gunObj) {
-      const p = st.reloadProg; // 0 -> 1
+      const p = st.reloadProg;
       let tiltZ = 0, tiltX = 0, magDropY = 0, handOffX = 0, handOffY = 0, handOffZ = 0, boltBack = 0;
 
       if (p < 0.25) {
@@ -493,11 +468,9 @@ function makeSoldierAvatar(opts = {}) {
     bone.updateMatrixWorld(true);
   }
 
-  // World-space two-handed rifle hold + Reload / Crouch / Slide skeletal pose
   function applyRifleHoldPose() {
     if (!hasSkeletal) return;
 
-    // Apply Crouch & Slide stance on root model & legs
     if (modelRoot) {
       const dropY = crouchLerp * 0.36 + slideLerp * 0.58;
       modelRoot.position.y = -dropY;
@@ -509,7 +482,6 @@ function makeSoldierAvatar(opts = {}) {
       bones.spine.rotation.x = crouchLerp * 0.25 - slideLerp * 0.35;
     }
 
-    // Leg flexion for crouch & power slide
     if (crouchLerp > 0.02 || slideLerp > 0.02) {
       if (bones.rUpLeg) bones.rUpLeg.rotation.x += crouchLerp * 0.72 + slideLerp * 1.15;
       if (bones.rLeg) bones.rLeg.rotation.x -= crouchLerp * 1.15 + slideLerp * 0.25;
@@ -526,7 +498,6 @@ function makeSoldierAvatar(opts = {}) {
     const rElbowWorld = grp.localToWorld(new THREE.Vector3(0.32, 1.08 - dropY, -0.06));
     const gripWorld = grp.localToWorld(new THREE.Vector3(0.16, 1.28 - dropY + pOff * 0.22, -0.32 + recoilZ));
 
-    // Left hand animates to magazine pouch & bolt during TPP reload!
     let lHandLocal = new THREE.Vector3(0.05, 1.31 - dropY + pOff * 0.45, -0.60 + recoilZ);
     let magDrop = 0;
     if (isReloading) {
@@ -651,7 +622,6 @@ function makeSoldierAvatar(opts = {}) {
     }
     applyRifleHoldPose();
   } else {
-    // Articulated 3D Tactical Soldier Fallback (Oriented facing -Z)
     const skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a077, roughness: 0.7 });
     const vestMat = new THREE.MeshStandardMaterial({ color: armorCol, roughness: 0.6, metalness: 0.25 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x1b2234, roughness: 0.8 });
@@ -774,19 +744,104 @@ function getWeaponSpec(gunId) {
   });
 }
 
-/* ===== MAIN 3D BATTLE WORLD ENGINE ===== */
+/* ===== PRE-MATCH DEPLOYMENT LOADING SCREEN + ASSET PRELOADER (850ms) ===== */
+let AR_LOADING = false;
 function startMatch(squadId = null) {
-  if (AR) return;
+  if (AR || AR_LOADING) return;
   if (typeof THREE === 'undefined') return toast('3D Engine unavailable on this browser.');
+  AR_LOADING = true;
   SFX.deploy();
 
-  const isPC = isPCDevice();
   const mapCfg = activeMap();
+  const loadEl = document.createElement('div');
+  loadEl.id = 'ar-load';
+  loadEl.className = 'ar-load';
+  loadEl.innerHTML = `
+    <div class="al-box">
+      <div class="al-tag">TACTICAL DEPLOYMENT</div>
+      <div class="al-map">${esc(mapCfg.name)}</div>
+      <div class="al-sub" id="al-step">DOWNLOADING 3D SOLDIER & WEAPON ASSETS...</div>
+      <div class="al-bar"><i id="al-fill" style="width:12%"></i></div>
+      <div class="al-pct" id="al-pct">12%</div>
+    </div>
+  `;
+  document.body.appendChild(loadEl);
+
+  const stepEl = document.getElementById('al-step');
+  const fillEl = document.getElementById('al-fill');
+  const pctEl = document.getElementById('al-pct');
+  const setProg = (pct, msg) => {
+    if (fillEl) fillEl.style.width = pct + '%';
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (stepEl && msg) stepEl.textContent = msg;
+  };
+
+  // Preload Soldier.glb if not already cached (non-blocking with timeout so offline/slow net never hangs)
+  const preloadSoldier = new Promise(resolve => {
+    if (GLTF_CACHE && GLTF_CACHE.soldier) return resolve();
+    if (!THREE.GLTFLoader) return resolve();
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    setTimeout(finish, 600);
+    try {
+      new THREE.GLTFLoader().load(
+        'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb',
+        gltf => {
+          if (typeof GLTF_CACHE === 'object') GLTF_CACHE.soldier = gltf;
+          finish();
+        },
+        undefined,
+        finish
+      );
+    } catch (e) {
+      finish();
+    }
+  });
+
+  setTimeout(() => setProg(38, 'GENERATING PBR TERRAIN & BUILDING TEXTURES...'), 160);
+  setTimeout(() => {
+    try { getArenaTextures(mapCfg.id); } catch (e) {}
+    setProg(68, 'ASSEMBLING 3D WEAPONS, BOTS & SQUAD HUD...');
+  }, 360);
+
+  Promise.all([
+    preloadSoldier,
+    new Promise(r => setTimeout(r, 720))
+  ]).then(() => {
+    setProg(92, 'INITIALIZING 3D BATTLE ARENA...');
+    requestAnimationFrame(() => {
+      try {
+        launchArenaWorld(squadId, mapCfg);
+        setProg(100, 'READY!');
+        setTimeout(() => {
+          loadEl.style.opacity = '0';
+          setTimeout(() => {
+            loadEl.remove();
+            AR_LOADING = false;
+          }, 180);
+        }, 120);
+      } catch (err) {
+        console.error('Arena launch error:', err);
+        loadEl.remove();
+        AR_LOADING = false;
+        toast('⚠️ Failed to start 3D Arena: ' + (err && err.message ? err.message : 'WebGL error'));
+      }
+    });
+  });
+}
+
+/* ===== MAIN 3D BATTLE WORLD ENGINE ===== */
+function launchArenaWorld(squadId, mapCfg) {
+  const isPC = isPCDevice();
   const primaryId = S.eq.gun >= 0 ? S.eq.gun : 3;
   const secondaryId = primaryId === 0 ? 1 : 0;
   const weapons = [getWeaponSpec(primaryId), getWeaponSpec(secondaryId)];
   const wState = weapons.map(w => ({ ammo: w.mag, reserve: w.res }));
   let wIdx = 0;
+
+  // Pause Lobby WebGL canvas so Mobile & PC GPUs dedicate 100% power to the 3D Arena
+  const lobbyGl = document.getElementById('gl');
+  if (lobbyGl) lobbyGl.style.visibility = 'hidden';
 
   // Build Arena DOM
   const arenaEl = document.createElement('div');
@@ -870,16 +925,23 @@ function startMatch(squadId = null) {
     if (feedEl) feedEl.textContent = msg;
   }
 
-  // Three.js Scene Setup with Textured 3D World
-  const renderer = new THREE.WebGLRenderer({ canvas: acv, antialias: S.cfg.gfx !== 'Low' });
+  // Create WebGLRenderer with automatic safe fallback for all mobile & PC browsers
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas: acv, antialias: S.cfg.gfx !== 'Low', powerPreference: 'high-performance' });
+  } catch (e) {
+    renderer = new THREE.WebGLRenderer({ canvas: acv, antialias: false });
+  }
   const q = S.cfg.gfx || 'High';
-  renderer.setPixelRatio(q === 'Low' ? 0.8 : q === 'Medium' ? 1.1 : Math.min(window.devicePixelRatio || 1, 1.8));
+  renderer.setPixelRatio(q === 'Low' ? 0.85 : q === 'Medium' ? 1.15 : Math.min(window.devicePixelRatio || 1, 1.75));
+  renderer.setClearColor(mapCfg.sky, 1);
+
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(mapCfg.sky);
   scene.fog = new THREE.Fog(mapCfg.sky, 32, 110);
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.08, 140);
-  scene.add(camera); // Required so FPP viewmodel children attached to camera render smoothly!
+  scene.add(camera);
 
   // Attach First-Person 3D Weapon & Gloved Hands Viewmodel to Camera
   const fppVm = createFppViewmodel();
@@ -930,7 +992,7 @@ function startMatch(squadId = null) {
     return mesh;
   }
 
-  // Fortified Concrete Perimeter Walls + Watchtowers
+  // Fortified Concrete Perimeter Walls
   addBox(0, 0, -48, 98, 4.8, 2.2, { map: tex.wallTex, roughness: 0.85 });
   addBox(0, 0, 48, 98, 4.8, 2.2, { map: tex.wallTex, roughness: 0.85 });
   addBox(-48, 0, 0, 2.2, 4.8, 98, { map: tex.wallTex, roughness: 0.85 });
@@ -939,9 +1001,7 @@ function startMatch(squadId = null) {
   // Multi-Story Textured Tactical Buildings with Roof Trim & Doors
   function buildTacticalBuilding(x, z, w, h, d, tintCol) {
     addBox(x, 0, z, w, h, d, { map: tex.wallTex, color: tintCol, roughness: 0.78 });
-    // Roof parapet cap
     addBox(x, h, z, w + 0.5, 0.45, d + 0.5, { color: 0x1e293b, roughness: 0.7 }, false);
-    // Entrance Doorframe
     const door = new THREE.Mesh(
       new THREE.BoxGeometry(1.5, 2.4, 0.25),
       new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6, roughness: 0.4 })
@@ -954,25 +1014,25 @@ function startMatch(squadId = null) {
   buildTacticalBuilding(-17, 17, 9.5, 5.6, 8.5, 0xe2e8f0);
   buildTacticalBuilding(17, 17, 9.5, 5.6, 8.5, 0xfef3c7);
 
-  // Corrugated Steel Shipping Containers (with Bump Map + Steel Frame)
+  // Corrugated Steel Shipping Containers
   function buildContainer(x, z, w, h, d, col) {
-    addBox(x, 0, z, w, h, d, { color: col, bumpMap: tex.contBump, bumpScale: 0.08, roughness: 0.52, metalness: 0.55 });
-    addBox(x, h, z, w + 0.12, 0.14, d + 0.12, { color: 0x1e293b, metalness: 0.7, roughness: 0.4 }, false);
+    addBox(x, 0, z, w, h, d, { color: col, map: tex.contTex, roughness: 0.55, metalness: 0.45 });
+    addBox(x, h, z, w + 0.12, 0.14, d + 0.12, { color: 0x1e293b, metalness: 0.65, roughness: 0.4 }, false);
   }
-  buildContainer(-9.5, -4.5, 2.9, 2.6, 6.4, 0xb91c1c);
-  buildContainer(9.5, 4.5, 2.9, 2.6, 6.4, 0x1d4ed8);
-  buildContainer(-27, 0, 3.2, 2.7, 7.6, 0x0f766e);
-  buildContainer(27, 0, 3.2, 2.7, 7.6, 0xb45309);
+  buildContainer(-9.5, -4.5, 2.9, 2.6, 6.4, 0xdc2626);
+  buildContainer(9.5, 4.5, 2.9, 2.6, 6.4, 0x2563eb);
+  buildContainer(-27, 0, 3.2, 2.7, 7.6, 0x0d9488);
+  buildContainer(27, 0, 3.2, 2.7, 7.6, 0xd97706);
 
-  // Tactical Steel Watchtowers (like Image 2's distant tower!)
+  // Tactical Steel Watchtowers
   function buildWatchtower(x, z) {
-    const legMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.75, roughness: 0.4 });
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.4 });
     [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]].forEach(([lx, lz]) => {
       const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7.2, 8), legMat);
       leg.position.set(x + lx, 3.6, z + lz);
       scene.add(leg);
     });
-    addBox(x, 6.4, z, 3.6, 0.28, 3.6, { color: 0x475569, metalness: 0.6 }, false);
+    addBox(x, 6.4, z, 3.6, 0.28, 3.6, { color: 0x475569, metalness: 0.55 }, false);
     addBox(x, 6.7, z - 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
     addBox(x, 6.7, z + 1.65, 3.6, 1.1, 0.15, { color: 0x1e293b }, false);
     addBox(x, 9.2, z, 4.0, 0.25, 4.0, { color: 0x7c2d12, roughness: 0.6 }, false);
@@ -1002,7 +1062,7 @@ function startMatch(squadId = null) {
     addBox(cx + 0.6, 1.35, cz, 1.1, 1.1, 1.1, { map: tex.crateTex, roughness: 0.8 });
   });
 
-  // 3D Trees & Foliage Clusters around the Arena
+  // 3D Trees & Foliage Clusters
   function buildTree(x, z, scale = 1) {
     const trunk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.24 * scale, 0.36 * scale, 2.8 * scale, 8),
@@ -1109,7 +1169,6 @@ function startMatch(squadId = null) {
     if (wNameEl) wNameEl.textContent = w.name;
     if (ammoEl) ammoEl.textContent = reloading ? 'RELOADING...' : `${st.ammo} / ${st.reserve}`;
     if (killsEl) killsEl.textContent = `KILLS: ${kills}`;
-    // Use full-screen black sniper reticle only for Snipers/Launchers or TPP Scope; in FPP, AR/SMG/Shotgun aim directly through the 3D Holo Sight!
     const showBlackScope = scoped && (!fpp || w.cat === 'sniper' || w.cat === 'launcher');
     if (scopeOv) scopeOv.classList.toggle('on', showBlackScope);
     if (xhairEl) xhairEl.style.opacity = (fpp && scoped && !showBlackScope) ? '0' : '1';
@@ -1161,7 +1220,6 @@ function startMatch(squadId = null) {
 
   function triggerSlideOrCrouch(isTap, isMoving) {
     if (isTap && isMoving && py <= 0.05 && slideTimer <= 0) {
-      // CODM Quick Tactical Slide!
       crouching = false;
       slideTimer = 0.78;
       slideDirX = Math.sin(charYaw) * -1;
@@ -1198,7 +1256,6 @@ function startMatch(squadId = null) {
 
   function doJump() {
     if (py <= 0.02) {
-      // Slide-Jump cancels slide/crouch into an athletic leap!
       const boost = slideTimer > 0 ? 1.15 : 1.0;
       slideTimer = 0;
       crouching = false;
@@ -1303,7 +1360,7 @@ function startMatch(squadId = null) {
   }
 
   /* ===== PC MOUSE 360° AIM ROTATION (POINTER LOCK), ESC TOGGLE & C SLIDE/CROUCH ===== */
-  let cDownTs = 0, cHoldTimer = null, cHeldTriggered = false;
+  let cHoldTimer = null, cHeldTriggered = false;
 
   function enterPcAimMode() {
     if (!isPC || !AR || AR.paused) return;
@@ -1390,7 +1447,6 @@ function startMatch(squadId = null) {
       e.preventDefault();
       doJump();
     } else if (e.code === 'KeyC' && !wasDown) {
-      cDownTs = performance.now();
       cHeldTriggered = false;
       clearTimeout(cHoldTimer);
       cHoldTimer = setTimeout(() => {
@@ -1528,9 +1584,9 @@ function startMatch(squadId = null) {
 
   // Resize Handler
   function resizeArena() {
-    const w = isPortrait() ? window.innerHeight : window.innerWidth;
-    const h = isPortrait() ? window.innerWidth : window.innerHeight;
-    renderer.setSize(w, h);
+    const w = Math.max(1, isPortrait() ? window.innerHeight : window.innerWidth);
+    const h = Math.max(1, isPortrait() ? window.innerWidth : window.innerHeight);
+    renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -1630,328 +1686,323 @@ function startMatch(squadId = null) {
     radarCtx.fill();
   }
 
-  // Main Arena Simulation Loop
+  // Main Arena Simulation Loop (Error-Guarded & Clamped Positive dt)
   let prevT = performance.now(), syncAccum = 0, rafId = 0, dustAccum = 0;
-  function loop(nowT) {
-    if (!AR) return;
-    rafId = requestAnimationFrame(loop);
-    const dt = Math.min(0.05, (nowT - prevT) / 1000);
+  function stepAndRender(nowT) {
+    const dt = Math.max(0.001, Math.min(0.05, (nowT - prevT) / 1000));
     prevT = nowT;
-    if (AR.paused) return;
+    if (AR && AR.paused) return;
 
-    // Movement Input (PC WASD / Arrows OR Mobile Touch Joystick)
-    let moveF = 0, moveR = 0, sprint = 1;
-    if (isPC) {
-      if (keysDown.KeyW || keysDown.ArrowUp) moveF += 1;
-      if (keysDown.KeyS || keysDown.ArrowDown) moveF -= 1;
-      if (keysDown.KeyD || keysDown.ArrowRight) moveR += 1;
-      if (keysDown.KeyA || keysDown.ArrowLeft) moveR -= 1;
-      if ((keysDown.ShiftLeft || keysDown.ShiftRight) && moveF > 0 && !crouching) sprint = 1.42;
-    } else {
-      moveF = -joyY;
-      moveR = joyX;
-    }
-
-    const rawMag = Math.hypot(moveF, moveR);
-    const mag = Math.min(1, rawMag);
-    if (rawMag > 1) { moveF /= rawMag; moveR /= rawMag; }
-
-    // Smooth Crouch & CODM Slide Interpolation
-    crouchLerp += ((crouching ? 1 : 0) - crouchLerp) * Math.min(1, dt * 14);
-    if (slideTimer > 0) {
-      slideTimer = Math.max(0, slideTimer - dt);
-      slideLerp += (1 - slideLerp) * Math.min(1, dt * 18);
-      dustAccum += dt;
-      if (dustAccum > 0.06) {
-        dustAccum = 0;
-        spawnDust(px, pz);
-      }
-    } else {
-      slideLerp += (0 - slideLerp) * Math.min(1, dt * 12);
-    }
-    if (slideFxEl) slideFxEl.style.opacity = (slideLerp * 0.85).toFixed(2);
-
-    // Compute Velocity (Slide burst overrides normal walk speed)
-    let stepX = 0, stepZ = 0;
-    if (slideTimer > 0) {
-      const slideSpd = 13.8 * (0.45 + 0.55 * (slideTimer / 0.78));
-      stepX = slideDirX * slideSpd * dt;
-      stepZ = slideDirZ * slideSpd * dt;
-    } else {
-      const stanceMul = crouching ? 0.56 : 1.0;
-      const speed = (scoped ? 4.4 : 8.0) * sprint * stanceMul;
-      const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
-      const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
-      stepX = (fwdX * moveF + rightX * moveR) * speed * dt;
-      stepZ = (fwdZ * moveF + rightZ * moveR) * speed * dt;
-    }
-
-    const pos = resolveCollisions(px + stepX, pz + stepZ);
-    px = pos.x;
-    pz = pos.z;
-
-    // Gravity & Jump Physics
-    vy -= 21 * dt;
-    py += vy * dt;
-    if (py <= 0) {
-      py = 0;
-      vy = 0;
-    }
-
-    const isFiringNow = (isPC && pcAimMode && pcFiring) || (!isPC && touchFiring);
-
-    let targetCharYaw = yaw;
-    if (slideTimer > 0) {
-      targetCharYaw = Math.atan2(-slideDirX, -slideDirZ);
-    } else if (mag > 0.08) {
-      if (isFiringNow || scoped) {
-        targetCharYaw = yaw + Math.atan2(-moveR * 0.45, Math.abs(moveF) + 0.55);
+    try {
+      let moveF = 0, moveR = 0, sprint = 1;
+      if (isPC) {
+        if (keysDown.KeyW || keysDown.ArrowUp) moveF += 1;
+        if (keysDown.KeyS || keysDown.ArrowDown) moveF -= 1;
+        if (keysDown.KeyD || keysDown.ArrowRight) moveR += 1;
+        if (keysDown.KeyA || keysDown.ArrowLeft) moveR -= 1;
+        if ((keysDown.ShiftLeft || keysDown.ShiftRight) && moveF > 0 && !crouching) sprint = 1.42;
       } else {
-        targetCharYaw = yaw + Math.atan2(-moveR, moveF);
+        moveF = -joyY;
+        moveR = joyX;
       }
-    }
-    charYaw += shortestAngleDiff(charYaw, targetCharYaw) * Math.min(1, dt * 16);
 
-    if (slideLerp > 0.35) {
-      curAnimState = 'Idle';
-      playerAv.setAnim('Idle', 1.0);
-    } else if (mag > 0.55 && !crouching) {
-      curAnimState = 'Run';
-      playerAv.setAnim('Run', Math.max(0.85, mag * sprint));
-    } else if (mag > 0.08) {
-      curAnimState = 'Walk';
-      playerAv.setAnim('Walk', Math.max(0.75, mag * (crouching ? 1.0 : 1.4)));
-    } else {
-      curAnimState = 'Idle';
-      playerAv.setAnim('Idle', 1.0);
-    }
+      const rawMag = Math.hypot(moveF, moveR);
+      const mag = Math.min(1, rawMag);
+      if (rawMag > 1) { moveF /= rawMag; moveR /= rawMag; }
 
-    const reloadProg = reloading ? Math.min(1, (nowT - reloadStartTs) / reloadDurMs) : 0;
-
-    playerAv.grp.position.set(px, py, pz);
-    playerAv.grp.rotation.y = charYaw;
-    playerAv.setAimPitch(pitch);
-    playerAv.setStance(crouchLerp, slideLerp, reloading, reloadProg);
-    playerAv.update(dt);
-
-    if (isFiringNow) {
-      fireWeapon();
-    }
-
-    // Camera Positioning + First-Person 3D Weapon Viewmodel
-    const curW = weapons[wIdx];
-    const isBlackSniperScope = scoped && (!fpp || curW.cat === 'sniper' || curW.cat === 'launcher');
-    const targetFov = scoped ? curW.zoom : (slideLerp > 0.2 ? 68 : 62);
-    camera.fov += (targetFov - camera.fov) * 0.25;
-    camera.updateProjectionMatrix();
-
-    const eyeH = 1.62 - crouchLerp * 0.48 - slideLerp * 0.78;
-
-    if (fpp || isBlackSniperScope) {
-      playerAv.grp.visible = false;
-      camera.position.set(px, py + eyeH, pz);
-      const lookTarget = new THREE.Vector3(
-        px - Math.sin(yaw) * Math.cos(pitch) * 10,
-        py + eyeH + Math.sin(pitch) * 10,
-        pz - Math.cos(yaw) * Math.cos(pitch) * 10
-      );
-      camera.lookAt(lookTarget);
-
-      // Show FPP 3D Weapon & Gloved Hands Viewmodel (except when full-screen sniper scope overlay is active)
-      fppVm.update(dt, {
-        visible: !isBlackSniperScope,
-        scoped,
-        mag,
-        sprint,
-        reloading,
-        reloadProg,
-        crouching,
-        slideLerp
-      });
-    } else {
-      playerAv.grp.visible = true;
-      fppVm.update(dt, { visible: false });
-
-      const camDist = 3.5;
-      const shoulderX = Math.cos(yaw) * 0.62;
-      const shoulderZ = -Math.sin(yaw) * 0.62;
-      const cx = px + Math.sin(yaw) * camDist + shoulderX;
-      const cz = pz + Math.cos(yaw) * camDist + shoulderZ;
-      const cy = py + (2.05 - crouchLerp * 0.45 - slideLerp * 0.72) - Math.sin(pitch) * 1.4;
-      camera.position.set(cx, Math.max(0.45, cy), cz);
-      camera.lookAt(
-        px - Math.sin(yaw) * 8 + shoulderX * 0.5,
-        py + (1.45 - crouchLerp * 0.42 - slideLerp * 0.65) + Math.sin(pitch) * 7,
-        pz - Math.cos(yaw) * 8 + shoulderZ * 0.5
-      );
-    }
-
-    // Update Pickups
-    pickups.forEach(pk => {
-      pk.mesh.rotation.y += dt * 2.2;
-      if (pk.cd > 0) {
-        pk.cd -= dt;
-        pk.mesh.visible = pk.cd <= 0;
-        return;
+      crouchLerp += ((crouching ? 1 : 0) - crouchLerp) * Math.min(1, dt * 14);
+      if (slideTimer > 0) {
+        slideTimer = Math.max(0, slideTimer - dt);
+        slideLerp += (1 - slideLerp) * Math.min(1, dt * 18);
+        dustAccum += dt;
+        if (dustAccum > 0.06) {
+          dustAccum = 0;
+          spawnDust(px, pz);
+        }
+      } else {
+        slideLerp += (0 - slideLerp) * Math.min(1, dt * 12);
       }
-      if (Math.hypot(px - pk.x, pz - pk.z) < 1.35) {
-        pk.cd = 10;
-        pk.mesh.visible = false;
-        SFX.coin();
-        if (pk.isMed) {
-          hp = Math.min(maxHp, hp + 40);
-          setFeed('➕ MEDKIT PICKED UP (+40 HP)');
+      if (slideFxEl) slideFxEl.style.opacity = (slideLerp * 0.85).toFixed(2);
+
+      let stepX = 0, stepZ = 0;
+      if (slideTimer > 0) {
+        const slideSpd = 13.8 * (0.45 + 0.55 * (slideTimer / 0.78));
+        stepX = slideDirX * slideSpd * dt;
+        stepZ = slideDirZ * slideSpd * dt;
+      } else {
+        const stanceMul = crouching ? 0.56 : 1.0;
+        const speed = (scoped ? 4.4 : 8.0) * sprint * stanceMul;
+        const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
+        const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
+        stepX = (fwdX * moveF + rightX * moveR) * speed * dt;
+        stepZ = (fwdZ * moveF + rightZ * moveR) * speed * dt;
+      }
+
+      const pos = resolveCollisions(px + stepX, pz + stepZ);
+      px = pos.x;
+      pz = pos.z;
+
+      vy -= 21 * dt;
+      py += vy * dt;
+      if (py <= 0) {
+        py = 0;
+        vy = 0;
+      }
+
+      const isFiringNow = (isPC && pcAimMode && pcFiring) || (!isPC && touchFiring);
+
+      let targetCharYaw = yaw;
+      if (slideTimer > 0) {
+        targetCharYaw = Math.atan2(-slideDirX, -slideDirZ);
+      } else if (mag > 0.08) {
+        if (isFiringNow || scoped) {
+          targetCharYaw = yaw + Math.atan2(-moveR * 0.45, Math.abs(moveF) + 0.55);
         } else {
-          wState.forEach((st, i) => { st.reserve += weapons[i].mag; });
-          setFeed('📦 AMMO CRATE PICKED UP!');
-        }
-        updateHud();
-      }
-    });
-
-    // Update Grenades
-    for (let i = grenades.length - 1; i >= 0; i--) {
-      const g = grenades[i];
-      g.vy -= 22 * dt;
-      g.mesh.position.x += g.vx * dt;
-      g.mesh.position.y += g.vy * dt;
-      g.mesh.position.z += g.vz * dt;
-      if (g.mesh.position.y <= 0.16) {
-        g.mesh.position.y = 0.16;
-        g.vy *= -0.35;
-        g.vx *= 0.65;
-        g.vz *= 0.65;
-      }
-      g.fuse -= dt;
-      if (g.fuse <= 0) {
-        SFX.boom();
-        const gx = g.mesh.position.x, gz = g.mesh.position.z;
-        bots.forEach(b => {
-          if (b.alive && Math.hypot(b.x - gx, b.z - gz) < 7.5) damageBot(b, 130);
-        });
-        scene.remove(g.mesh);
-        grenades.splice(i, 1);
-      }
-    }
-
-    // Update Tracers & Slide Dust
-    for (let i = tracers.length - 1; i >= 0; i--) {
-      tracers[i].life -= dt;
-      if (tracers[i].life <= 0) {
-        scene.remove(tracers[i].line);
-        tracers[i].line.geometry.dispose();
-        tracers.splice(i, 1);
-      }
-    }
-    for (let i = dustParts.length - 1; i >= 0; i--) {
-      const d = dustParts[i];
-      d.life -= dt;
-      d.mesh.scale.addScalar(dt * 2.5);
-      d.mesh.material.opacity = Math.max(0, d.life * 1.4);
-      if (d.life <= 0) {
-        scene.remove(d.mesh);
-        d.mesh.geometry.dispose();
-        dustParts.splice(i, 1);
-      }
-    }
-
-    // Update Enemy Bots AI
-    bots.forEach(b => {
-      if (!b.alive) {
-        b.respawnT -= dt;
-        if (b.respawnT <= 0) {
-          const sp = botSpawns[b.id % botSpawns.length];
-          b.x = sp[0];
-          b.z = sp[1];
-          b.hp = 100;
-          b.alive = true;
-          b.av.grp.rotation.x = 0;
-          b.av.grp.position.set(b.x, 0, b.z);
-        }
-        return;
-      }
-
-      const dx = px - b.x, dz = pz - b.z;
-      const dist = Math.hypot(dx, dz);
-      b.strafeT -= dt;
-      if (b.strafeT <= 0) {
-        b.strafeT = 1.4 + Math.random() * 2;
-        b.dir = Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.3;
-      }
-
-      const chasing = dist > 12;
-      const moveSpd = chasing ? 3.5 : 1.7;
-      const vx = Math.sin(b.dir) * moveSpd;
-      const vz = Math.cos(b.dir) * moveSpd;
-      const nx = Math.max(-44, Math.min(44, b.x + vx * dt));
-      const nz = Math.max(-44, Math.min(44, b.z + vz * dt));
-      let blocked = false;
-      for (const c of colliders) {
-        if (nx + 0.55 > c.minX && nx - 0.55 < c.maxX && nz + 0.55 > c.minZ && nz - 0.55 < c.maxZ) {
-          blocked = true;
-          break;
+          targetCharYaw = yaw + Math.atan2(-moveR, moveF);
         }
       }
-      if (!blocked) {
-        b.x = nx;
-        b.z = nz;
+      charYaw += shortestAngleDiff(charYaw, targetCharYaw) * Math.min(1, dt * 16);
+
+      if (slideLerp > 0.35) {
+        curAnimState = 'Idle';
+        playerAv.setAnim('Idle', 1.0);
+      } else if (mag > 0.55 && !crouching) {
+        curAnimState = 'Run';
+        playerAv.setAnim('Run', Math.max(0.85, mag * sprint));
+      } else if (mag > 0.08) {
+        curAnimState = 'Walk';
+        playerAv.setAnim('Walk', Math.max(0.75, mag * (crouching ? 1.0 : 1.4)));
       } else {
-        b.dir += Math.PI * 0.65;
+        curAnimState = 'Idle';
+        playerAv.setAnim('Idle', 1.0);
       }
 
-      const faceX = chasing ? vx : dx;
-      const faceZ = chasing ? vz : dz;
-      const targetBotRot = Math.atan2(-faceX, -faceZ);
-      b.rotY += shortestAngleDiff(b.rotY, targetBotRot) * Math.min(1, dt * 10);
+      const reloadProg = reloading ? Math.min(1, (nowT - reloadStartTs) / reloadDurMs) : 0;
 
-      b.av.grp.position.set(b.x, 0, b.z);
-      b.av.grp.rotation.y = b.rotY;
-      b.av.setAnim(chasing ? 'Run' : 'Walk', chasing ? 1.0 : 0.85);
-      b.av.update(dt);
+      playerAv.grp.position.set(px, py, pz);
+      playerAv.grp.rotation.y = charYaw;
+      playerAv.setAimPitch(pitch);
+      playerAv.setStance(crouchLerp, slideLerp, reloading, reloadProg);
+      playerAv.update(dt);
 
-      b.fireCd -= dt;
-      if (b.fireCd <= 0 && dist < 38) {
-        b.fireCd = 1.4 + Math.random() * 1.3;
-        b.av.triggerMuzzle();
-        const from = new THREE.Vector3(b.x, 1.42, b.z);
-        const to = new THREE.Vector3(px + (Math.random() - 0.5) * 1.6, py + 1.2, pz + (Math.random() - 0.5) * 1.6);
-        spawnTracer(from, to, 0xff2a55);
-        // Harder for bots to hit you while sliding or crouched!
-        const hitChance = slideTimer > 0 ? 0.12 : crouching ? 0.22 : 0.32;
-        if (Math.random() < hitChance) {
-          hp = Math.max(0, hp - 8);
+      if (isFiringNow) {
+        fireWeapon();
+      }
+
+      const curW = weapons[wIdx];
+      const isBlackSniperScope = scoped && (!fpp || curW.cat === 'sniper' || curW.cat === 'launcher');
+      const targetFov = scoped ? curW.zoom : (slideLerp > 0.2 ? 68 : 62);
+      camera.fov += (targetFov - camera.fov) * 0.25;
+      camera.updateProjectionMatrix();
+
+      const eyeH = 1.62 - crouchLerp * 0.48 - slideLerp * 0.78;
+
+      if (fpp || isBlackSniperScope) {
+        playerAv.grp.visible = false;
+        camera.position.set(px, py + eyeH, pz);
+        const lookTarget = new THREE.Vector3(
+          px - Math.sin(yaw) * Math.cos(pitch) * 10,
+          py + eyeH + Math.sin(pitch) * 10,
+          pz - Math.cos(yaw) * Math.cos(pitch) * 10
+        );
+        camera.lookAt(lookTarget);
+
+        fppVm.update(dt, {
+          visible: !isBlackSniperScope,
+          scoped,
+          mag,
+          sprint,
+          reloading,
+          reloadProg,
+          crouching,
+          slideLerp
+        });
+      } else {
+        playerAv.grp.visible = true;
+        fppVm.update(dt, { visible: false });
+
+        const camDist = 3.5;
+        const shoulderX = Math.cos(yaw) * 0.62;
+        const shoulderZ = -Math.sin(yaw) * 0.62;
+        const cx = px + Math.sin(yaw) * camDist + shoulderX;
+        const cz = pz + Math.cos(yaw) * camDist + shoulderZ;
+        const cy = py + (2.05 - crouchLerp * 0.45 - slideLerp * 0.72) - Math.sin(pitch) * 1.4;
+        camera.position.set(cx, Math.max(0.45, cy), cz);
+        camera.lookAt(
+          px - Math.sin(yaw) * 8 + shoulderX * 0.5,
+          py + (1.45 - crouchLerp * 0.42 - slideLerp * 0.65) + Math.sin(pitch) * 7,
+          pz - Math.cos(yaw) * 8 + shoulderZ * 0.5
+        );
+      }
+
+      pickups.forEach(pk => {
+        pk.mesh.rotation.y += dt * 2.2;
+        if (pk.cd > 0) {
+          pk.cd -= dt;
+          pk.mesh.visible = pk.cd <= 0;
+          return;
+        }
+        if (Math.hypot(px - pk.x, pz - pk.z) < 1.35) {
+          pk.cd = 10;
+          pk.mesh.visible = false;
+          SFX.coin();
+          if (pk.isMed) {
+            hp = Math.min(maxHp, hp + 40);
+            setFeed('➕ MEDKIT PICKED UP (+40 HP)');
+          } else {
+            wState.forEach((st, i) => { st.reserve += weapons[i].mag; });
+            setFeed('📦 AMMO CRATE PICKED UP!');
+          }
           updateHud();
-          if (hp <= 0) {
-            hp = 100;
-            px = 0;
-            pz = 28;
-            setFeed('⚠️ RESPAWNED AT BASE CAMP!');
-            updateHud();
+        }
+      });
+
+      for (let i = grenades.length - 1; i >= 0; i--) {
+        const g = grenades[i];
+        g.vy -= 22 * dt;
+        g.mesh.position.x += g.vx * dt;
+        g.mesh.position.y += g.vy * dt;
+        g.mesh.position.z += g.vz * dt;
+        if (g.mesh.position.y <= 0.16) {
+          g.mesh.position.y = 0.16;
+          g.vy *= -0.35;
+          g.vx *= 0.65;
+          g.vz *= 0.65;
+        }
+        g.fuse -= dt;
+        if (g.fuse <= 0) {
+          SFX.boom();
+          const gx = g.mesh.position.x, gz = g.mesh.position.z;
+          bots.forEach(b => {
+            if (b.alive && Math.hypot(b.x - gx, b.z - gz) < 7.5) damageBot(b, 130);
+          });
+          scene.remove(g.mesh);
+          grenades.splice(i, 1);
+        }
+      }
+
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        tracers[i].life -= dt;
+        if (tracers[i].life <= 0) {
+          scene.remove(tracers[i].line);
+          tracers[i].line.geometry.dispose();
+          tracers.splice(i, 1);
+        }
+      }
+      for (let i = dustParts.length - 1; i >= 0; i--) {
+        const d = dustParts[i];
+        d.life -= dt;
+        d.mesh.scale.addScalar(dt * 2.5);
+        d.mesh.material.opacity = Math.max(0, d.life * 1.4);
+        if (d.life <= 0) {
+          scene.remove(d.mesh);
+          d.mesh.geometry.dispose();
+          dustParts.splice(i, 1);
+        }
+      }
+
+      bots.forEach(b => {
+        if (!b.alive) {
+          b.respawnT -= dt;
+          if (b.respawnT <= 0) {
+            const sp = botSpawns[b.id % botSpawns.length];
+            b.x = sp[0];
+            b.z = sp[1];
+            b.hp = 100;
+            b.alive = true;
+            b.av.grp.rotation.x = 0;
+            b.av.grp.position.set(b.x, 0, b.z);
+          }
+          return;
+        }
+
+        const dx = px - b.x, dz = pz - b.z;
+        const dist = Math.hypot(dx, dz);
+        b.strafeT -= dt;
+        if (b.strafeT <= 0) {
+          b.strafeT = 1.4 + Math.random() * 2;
+          b.dir = Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.3;
+        }
+
+        const chasing = dist > 12;
+        const moveSpd = chasing ? 3.5 : 1.7;
+        const vx = Math.sin(b.dir) * moveSpd;
+        const vz = Math.cos(b.dir) * moveSpd;
+        const nx = Math.max(-44, Math.min(44, b.x + vx * dt));
+        const nz = Math.max(-44, Math.min(44, b.z + vz * dt));
+        let blocked = false;
+        for (const c of colliders) {
+          if (nx + 0.55 > c.minX && nx - 0.55 < c.maxX && nz + 0.55 > c.minZ && nz - 0.55 < c.maxZ) {
+            blocked = true;
+            break;
           }
         }
+        if (!blocked) {
+          b.x = nx;
+          b.z = nz;
+        } else {
+          b.dir += Math.PI * 0.65;
+        }
+
+        const faceX = chasing ? vx : dx;
+        const faceZ = chasing ? vz : dz;
+        const targetBotRot = Math.atan2(-faceX, -faceZ);
+        b.rotY += shortestAngleDiff(b.rotY, targetBotRot) * Math.min(1, dt * 10);
+
+        b.av.grp.position.set(b.x, 0, b.z);
+        b.av.grp.rotation.y = b.rotY;
+        b.av.setAnim(chasing ? 'Run' : 'Walk', chasing ? 1.0 : 0.85);
+        b.av.update(dt);
+
+        b.fireCd -= dt;
+        if (b.fireCd <= 0 && dist < 38) {
+          b.fireCd = 1.4 + Math.random() * 1.3;
+          b.av.triggerMuzzle();
+          const from = new THREE.Vector3(b.x, 1.42, b.z);
+          const to = new THREE.Vector3(px + (Math.random() - 0.5) * 1.6, py + 1.2, pz + (Math.random() - 0.5) * 1.6);
+          spawnTracer(from, to, 0xff2a55);
+          const hitChance = slideTimer > 0 ? 0.12 : crouching ? 0.22 : 0.32;
+          if (Math.random() < hitChance) {
+            hp = Math.max(0, hp - 8);
+            updateHud();
+            if (hp <= 0) {
+              hp = 100;
+              px = 0;
+              pz = 28;
+              setFeed('⚠️ RESPAWNED AT BASE CAMP!');
+              updateHud();
+            }
+          }
+        }
+      });
+
+      Object.values(remotePeers).forEach(rp => {
+        const stepD = Math.hypot(rp.tx - rp.av.grp.position.x, rp.tz - rp.av.grp.position.z);
+        rp.av.grp.position.x += (rp.tx - rp.av.grp.position.x) * 0.22;
+        rp.av.grp.position.y += (rp.ty - rp.av.grp.position.y) * 0.22;
+        rp.av.grp.position.z += (rp.tz - rp.av.grp.position.z) * 0.22;
+        rp.av.grp.rotation.y += shortestAngleDiff(rp.av.grp.rotation.y, rp.try) * 0.25;
+        rp.av.setAnim(stepD > 0.04 ? 'Run' : (rp.anim || 'Idle'));
+        rp.av.update(dt);
+      });
+
+      syncAccum += dt;
+      if (syncAccum >= 0.35) {
+        syncAccum = 0;
+        if (SQUAD_ID && typeof syncBattleState === 'function') syncBattleState();
       }
-    });
-
-    // Smoothly interpolate Remote Teammates
-    Object.values(remotePeers).forEach(rp => {
-      const stepD = Math.hypot(rp.tx - rp.av.grp.position.x, rp.tz - rp.av.grp.position.z);
-      rp.av.grp.position.x += (rp.tx - rp.av.grp.position.x) * 0.22;
-      rp.av.grp.position.y += (rp.ty - rp.av.grp.position.y) * 0.22;
-      rp.av.grp.position.z += (rp.tz - rp.av.grp.position.z) * 0.22;
-      rp.av.grp.rotation.y += shortestAngleDiff(rp.av.grp.rotation.y, rp.try) * 0.25;
-      rp.av.setAnim(stepD > 0.04 ? 'Run' : (rp.anim || 'Idle'));
-      rp.av.update(dt);
-    });
-
-    // Sync Squad Packet every 350ms
-    syncAccum += dt;
-    if (syncAccum >= 0.35) {
-      syncAccum = 0;
-      if (SQUAD_ID && typeof syncBattleState === 'function') syncBattleState();
+    } catch (simErr) {
+      console.error('Arena sim step warning:', simErr);
     }
 
     drawRadar();
     renderer.render(scene, camera);
+  }
+
+  function loop(nowT) {
+    if (!AR) return;
+    rafId = requestAnimationFrame(loop);
+    stepAndRender(nowT);
   }
 
   AR = {
@@ -1985,11 +2036,15 @@ function startMatch(squadId = null) {
         try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {}
       }
       renderer.dispose();
+      const glEl = document.getElementById('gl');
+      if (glEl) glEl.style.visibility = 'visible';
     },
     stats: () => ({ kills, mapName: mapCfg.name })
   };
 
   syncTeammates(squadMembers());
+  // Render initial frame immediately behind loading screen so world is 100% ready on reveal
+  stepAndRender(performance.now() + 16);
   rafId = requestAnimationFrame(loop);
 }
 
